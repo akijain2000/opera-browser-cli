@@ -1532,7 +1532,7 @@ async function handleInvokeDo(args: string[]): Promise<string> {
       'Run `opera-cli invoke-do "Click the login button"` to perform an action',
     ]);
   }
-  const result = await callTool("opera_invoke_do", { prompt });
+  const result = await callTool("opera_do", { prompt });
   return formatMcpResult("result", result, []);
 }
 
