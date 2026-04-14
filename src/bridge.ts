@@ -227,7 +227,7 @@ function writeReadySignal(): void {
 }
 
 export function buildTransportArgs(): string[] {
-  const args = ["-y", "opera-devtools-mcp@latest"];
+  const args: string[] = [];
 
   const browserUrl = process.env.OPERA_CLI_BROWSER_URL;
   const userDataDir = process.env.OPERA_CLI_USER_DATA_DIR;
@@ -263,7 +263,8 @@ export function buildTransportArgs(): string[] {
 }
 
 function createTransport(): StdioClientTransport {
-  return new StdioClientTransport({ command: "npx", args: buildTransportArgs() });
+  const command = process.env.OPERA_CLI_MCP_BIN ?? "opera-devtools-mcp";
+  return new StdioClientTransport({ command, args: buildTransportArgs() });
 }
 
 function createBridgeClient(): Client {

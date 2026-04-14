@@ -191,7 +191,8 @@ export async function ensureBridge(): Promise<number> {
   }
 
   throw new CdpError("Bridge failed to start within 30s", "BRIDGE_NOT_READY", [
-    "Check that opera-devtools-mcp is installed: npx opera-devtools-mcp@latest --help",
+    "For local dev: set OPERA_CLI_MCP_BIN to the linked binary, e.g. OPERA_CLI_MCP_BIN=opera-devtools-mcp",
+    "For published version: check that opera-devtools-mcp is installed: npx opera-devtools-mcp@latest --help",
   ]);
 }
 

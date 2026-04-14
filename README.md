@@ -220,6 +220,18 @@ npm link
 export OPERA_CLI_EXECUTABLE_PATH="/Applications/Opera Neon Developer.app/Contents/MacOS/Opera"
 ```
 
+**Tip:** Set `OPERA_CLI_MCP_BIN` to use the locally linked `opera-devtools-mcp` instead of downloading from npm:
+
+```sh
+export OPERA_CLI_MCP_BIN=opera-devtools-mcp
+```
+
+**Tip:** Set `OPERA_CLI_HEADED=1` to launch the browser in headed (visible) mode — useful during development to watch what's happening:
+
+```sh
+export OPERA_CLI_HEADED=1
+```
+
 **4. Load the skill into your agent:**
 
 Place `SKILL.md` (or the compact skill variant) where Claude or another agent can load it. Once loaded, the agent has access to the `opera-cli` skill and can use it directly.

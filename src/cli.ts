@@ -33,7 +33,7 @@ export type MainOptions = {
 };
 
 export const TOP_HELP = `usage: opera-cli [command] [args] [flags]
-commands[34]:
+commands[38]:
   open <url>, snapshot, screenshot <path>, click @<uid>, fill @<uid> <text>,
   type <text>, press <key>, scroll <dir>, back, wait <ms|text>, eval <js>,
   run,
@@ -41,7 +41,8 @@ commands[34]:
   upload @<uid> <path>, pages, newpage <url>, selectpage <id>, closepage <id>,
   resize <w> <h>, emulate, console, console-get <id>, network,
   network-get [id], lighthouse, perf-start, perf-stop,
-  perf-insight <set> <name>, heap <path>, start, stop
+  perf-insight <set> <name>, heap <path>, start, stop,
+  chat <prompt>, invoke-do <prompt>, make <prompt>, research <prompt>
 
 flags[2]:
   --help, -v/-V/--version
@@ -500,6 +501,51 @@ args:
 
 examples:
   opera-cli heap ./snapshot.heapsnapshot`,
+
+  // Opera AI
+  chat: `usage: opera-cli chat <prompt>
+Send a chat message to the Opera AI.
+
+args:
+  <prompt>  Message to send (required)
+
+examples:
+  opera-cli chat "Hello, who are you?"
+  opera-cli chat "What can you help me with?"`,
+
+  "invoke-do": `usage: opera-cli invoke-do <prompt>
+Ask the Opera AI to perform a complex browsing task.
+
+args:
+  <prompt>  Task to perform (required)
+
+examples:
+  opera-cli invoke-do "Find the cheapest flight from London to Tokyo next month"
+  opera-cli invoke-do "Log in to my account and check my order history"`,
+
+  make: `usage: opera-cli make <prompt>
+Ask the Opera AI to build something, e.g. a webpage or web app.
+
+args:
+  <prompt>  What to build (required)
+
+examples:
+  opera-cli make "A landing page for a coffee shop with a menu and contact form"
+  opera-cli make "A todo app with local storage and drag-and-drop reordering"`,
+
+  research: `usage: opera-cli research <prompt> [--type <mode>]
+Ask the Opera AI to research a topic in depth.
+
+args:
+  <prompt>  Topic to research (required)
+
+flags:
+  --type <mode>  Research depth: local, one-minute, or deep (default: local)
+
+examples:
+  opera-cli research "the history of the Roman Empire"
+  opera-cli research "advances in CRISPR gene editing" --type deep
+  opera-cli research "best practices for React performance" --type one-minute`,
 };
 
 export function getCommandHelp(command: string): string | null {
@@ -1466,6 +1512,84 @@ async function handleHeap(args: string[]): Promise<string> {
   return encode({ heap: filePath });
 }
 
+// --- Opera AI handlers ---
+
+async function handleChat(args: string[]): Promise<string> {
+  const prompt = args.join(" ");
+  if (!prompt) {
+    throw new CdpError("Missing prompt", "VALIDATION_ERROR", [
+      'Run `opera-cli chat "What is on this page?"` to chat with Opera AI',
+    ]);
+  }
+  const result = await callTool("opera_chat", { prompt });
+  return formatMcpResult("result", result, []);
+}
+
+async function handleInvokeDo(args: string[]): Promise<string> {
+  const prompt = args.join(" ");
+  if (!prompt) {
+    throw new CdpError("Missing prompt", "VALIDATION_ERROR", [
+      'Run `opera-cli invoke-do "Click the login button"` to perform an action',
+    ]);
+  }
+  const result = await callTool("opera_do", { prompt });
+  return formatMcpResult("result", result, []);
+}
+
+async function handleMake(args: string[]): Promise<string> {
+  const prompt = args.join(" ");
+  if (!prompt) {
+    throw new CdpError("Missing prompt", "VALIDATION_ERROR", [
+      'Run `opera-cli make "A summary of this page"` to create something',
+    ]);
+  }
+  const result = await callTool("opera_make", { prompt });
+  return formatMcpResult("result", result, []);
+}
+
+const VALID_RESEARCH_TYPES = ["local", "one-minute", "deep"] as const;
+type ResearchType = (typeof VALID_RESEARCH_TYPES)[number];
+
+export function parseResearchArgs(args: string[]): {
+  prompt: string;
+  researchType?: ResearchType;
+} {
+  let researchType: ResearchType | undefined;
+  const promptParts: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--type" && i + 1 < args.length) {
+      researchType = args[++i] as ResearchType;
+    } else {
+      promptParts.push(args[i]);
+    }
+  }
+  return { prompt: promptParts.join(" "), researchType };
+}
+
+async function handleResearch(args: string[]): Promise<string> {
+  const { prompt, researchType } = parseResearchArgs(args);
+  if (!prompt) {
+    throw new CdpError("Missing prompt", "VALIDATION_ERROR", [
+      'Run `opera-cli research "quantum computing"` to research a topic',
+      "Run `opera-cli research <prompt> --type deep` for deep research",
+    ]);
+  }
+  if (
+    researchType !== undefined &&
+    !VALID_RESEARCH_TYPES.includes(researchType)
+  ) {
+    throw new CdpError(
+      `Invalid research type: ${researchType}`,
+      "VALIDATION_ERROR",
+      ["Valid types: local, one-minute, deep"],
+    );
+  }
+  const toolArgs: Record<string, unknown> = { prompt };
+  if (researchType !== undefined) toolArgs.researchType = researchType;
+  const result = await callTool("opera_research", toolArgs);
+  return formatMcpResult("result", result, []);
+}
+
 async function handleRun(): Promise<string> {
   if (process.stdin.isTTY) {
     throw new CdpError("No script provided on stdin", "VALIDATION_ERROR", [
@@ -1556,6 +1680,10 @@ const COMMANDS: Record<string, CommandFn> = {
   heap: withoutFullFlag(handleHeap),
   start: async () => handleStart(),
   stop: async () => handleStop(),
+  chat: withoutFullFlag(handleChat),
+  "invoke-do": withoutFullFlag(handleInvokeDo),
+  make: withoutFullFlag(handleMake),
+  research: withoutFullFlag(handleResearch),
 };
 
 export async function main(

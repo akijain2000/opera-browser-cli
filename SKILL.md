@@ -115,6 +115,31 @@ opera-cli perf-insight <set-id> LCPBreakdown
 opera-cli heap ./snapshot.heapsnapshot   # heap dump
 ```
 
+## Opera AI
+
+Use Opera's built-in AI to chat, act, create, and research directly from the CLI.
+
+```bash
+# Chat — conversational AI
+opera-cli chat "Hello, who are you?"
+opera-cli chat "What can you help me with?"
+
+# invoke-do — complex browsing tasks
+opera-cli invoke-do "Find the cheapest flight from London to Tokyo next month"
+opera-cli invoke-do "Log in to my account and check my order history"
+
+# make — build webpages, apps, and other artifacts
+opera-cli make "A landing page for a coffee shop with a menu and contact form"
+opera-cli make "A todo app with local storage and drag-and-drop reordering"
+
+# research — in-depth topic research
+opera-cli research "the history of the Roman Empire"
+opera-cli research "advances in CRISPR gene editing" --type deep
+opera-cli research "best practices for React performance" --type one-minute
+```
+
+Research types: `local` (default), `one-minute`, `deep`.
+
 ## Environment variables
 
 | Variable | Purpose |
