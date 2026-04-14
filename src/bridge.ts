@@ -244,6 +244,14 @@ export function buildTransportArgs(): string[] {
     if (userDataDir) {
       // Persistent profile — skip --isolated so the profile is preserved.
       args.push(`--userDataDir=${userDataDir}`);
+      // Puppeteer adds --use-mock-keychain and --password-store=basic by default,
+      // which prevent the browser from decrypting cookies stored with the real
+      // macOS Keychain. Drop them so a persistent profile stays logged in.
+      args.push("--ignore-default-chrome-arg=--use-mock-keychain");
+      args.push("--ignore-default-chrome-arg=--password-store=basic");
+      args.push("--ignore-default-chrome-arg=--disable-extensions");
+      args.push("--ignore-default-chrome-arg=--disable-component-extensions-with-background-pages");
+      args.push("--show-component-extension-options");
     } else {
       args.push("--isolated");
     }
