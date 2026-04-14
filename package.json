@@ -1,7 +1,7 @@
 {
   "name": "opera-cli",
   "version": "0.1.15",
-  "description": "AXI-compliant chrome-devtools-mcp wrapper — combined operations, TOON output, contextual suggestions",
+  "description": "AXI-compliant opera-devtools-mcp wrapper — combined operations, TOON output, contextual suggestions",
   "type": "module",
   "repository": {
     "type": "git",

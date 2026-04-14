@@ -1,7 +1,7 @@
 /**
  * Persistent MCP bridge server for opera-cli.
  *
- * Spawns chrome-devtools-mcp as a child process and maintains a single
+ * Spawns opera-devtools-mcp as a child process and maintains a single
  * persistent MCP session. Exposes a simple HTTP API:
  *   POST /call  { name, args }  → { result }
  *   GET  /tools                 → [{ name, description }]
@@ -227,7 +227,7 @@ function writeReadySignal(): void {
 }
 
 export function buildTransportArgs(): string[] {
-  const args = ["-y", "chrome-devtools-mcp@latest"];
+  const args = ["-y", "opera-devtools-mcp@latest"];
 
   const browserUrl = process.env.OPERA_CLI_BROWSER_URL;
   const userDataDir = process.env.OPERA_CLI_USER_DATA_DIR;
@@ -286,7 +286,7 @@ export async function runBridge(port = DEFAULT_PORT): Promise<void> {
   const transport = createTransport();
   const client = createBridgeClient();
   await client.connect(transport);
-  logBridgeMessage("Connected to chrome-devtools-mcp");
+  logBridgeMessage("Connected to opera-devtools-mcp");
 
   const server = createBridgeServer(client);
   server.listen(port, "127.0.0.1", () => {
@@ -306,7 +306,7 @@ export async function runBridge(port = DEFAULT_PORT): Promise<void> {
     process.exit(0);
   };
 
-  // Kill our entire process group on exit so chrome-devtools-mcp children
+  // Kill our entire process group on exit so opera-devtools-mcp children
   // don't survive as orphans. The bridge is spawned with detached:true,
   // making it a process group leader — all children share our PGID.
   process.on("exit", () => {

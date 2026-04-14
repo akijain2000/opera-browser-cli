@@ -3,7 +3,7 @@
 <h3 align="center">The most agent-ergonomic browser automation</h3>
 
 `opera-cli` is a fork of [chrome-devtools-axi](https://github.com/kunchenguid/chrome-devtools-axi).
-It wraps opera-devtool (a fork of [chrome-devtools-mcp](https://www.npmjs.com/package/chrome-devtools-mcp)) with an [AXI](https://axi.md)-compliant CLI.
+It wraps opera-devtool (a fork of [opera-devtools-mcp](https://www.npmjs.com/package/opera-devtools-mcp)) with an [AXI](https://axi.md)-compliant CLI.
 
 - **Token-efficient** — TOON-encoded output cuts token usage ~40% vs raw JSON
 - **Combined operations** — one command navigates, captures, and suggests next steps
@@ -50,7 +50,7 @@ Execute `npx -y opera-cli` to get browser automation tools.
            │ stdio
            ▼
 ┌───────────────────────┐
-│  chrome-devtools-mcp  │  Headless Chrome via DevTools Protocol
+│  opera-devtools-mcp  │  Headless Chrome via DevTools Protocol
 └───────────────────────┘
 ```
 

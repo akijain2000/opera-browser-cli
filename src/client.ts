@@ -191,7 +191,7 @@ export async function ensureBridge(): Promise<number> {
   }
 
   throw new CdpError("Bridge failed to start within 30s", "BRIDGE_NOT_READY", [
-    "Check that chrome-devtools-mcp is installed: npx chrome-devtools-mcp@latest --help",
+    "Check that opera-devtools-mcp is installed: npx opera-devtools-mcp@latest --help",
   ]);
 }
 

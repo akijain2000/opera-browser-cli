@@ -71,13 +71,13 @@ describe("buildTransportArgs", () => {
 
   it("defaults to headless and isolated", () => {
     const args = buildTransportArgs();
-    expect(args).toEqual(["-y", "chrome-devtools-mcp@latest", "--isolated", "--headless"]);
+    expect(args).toEqual(["-y", "opera-devtools-mcp@latest", "--isolated", "--headless"]);
   });
 
   it("omits --headless when OPERA_CLI_HEADED=1", () => {
     process.env.OPERA_CLI_HEADED = "1";
     const args = buildTransportArgs();
-    expect(args).toEqual(["-y", "chrome-devtools-mcp@latest", "--isolated"]);
+    expect(args).toEqual(["-y", "opera-devtools-mcp@latest", "--isolated"]);
   });
 
   it("forwards chrome args via --chrome-arg=", () => {
