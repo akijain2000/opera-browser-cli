@@ -130,6 +130,19 @@ opera-cli eval "(() => { const rows = [...document.querySelectorAll('tr')]; retu
 | `perf-insight <set> <name>` | Analyze a performance insight |
 | `heap <path>`               | Capture a heap snapshot       |
 
+### Opera AI
+
+Requires Opera Neon with an active Opera account.
+
+| Command             | Description                                   |
+| ------------------- | --------------------------------------------- |
+| `chat <prompt>`     | Send a chat message to Opera's built-in AI    |
+| `invoke-do <prompt>`| Ask the AI to perform a complex browsing task |
+| `make <prompt>`     | Ask the AI to build a webpage or app          |
+| `research <prompt>` | Ask the AI to research a topic in depth       |
+
+`research` accepts `--type local` (default), `--type one-minute`, or `--type deep`.
+
 ### Bridge
 
 | Command | Description             |
@@ -172,11 +185,16 @@ session is active or the no-session status/help block when one is not.
 
 ## Configuration
 
-The bridge server port defaults to `9224`. Override it with an environment variable:
-
-```sh
-export OPERA_CLI_PORT=9225
-```
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `OPERA_CLI_PORT` | `9224` | Bridge server port |
+| `OPERA_CLI_MCP_BIN` | `opera-devtools-mcp` | MCP server binary |
+| `OPERA_CLI_EXECUTABLE_PATH` | _(system Chrome)_ | Custom browser binary |
+| `OPERA_CLI_BROWSER_URL` | — | Connect to an existing browser instance instead of launching one |
+| `OPERA_CLI_USER_DATA_DIR` | — | Persistent Chrome profile directory (skips isolated mode) |
+| `OPERA_CLI_HEADED` | — | Set to `1` to run in headed (visible) mode |
+| `OPERA_CLI_CHROME_ARGS` | — | Extra Chrome flags, space-separated |
+| `OPERA_CLI_DISABLE_HOOKS` | — | Set to `1` to skip auto-installing session hooks |
 
 State is stored in `~/.opera-cli/`:
 
