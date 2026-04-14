@@ -192,6 +192,38 @@ Set `OPERA_CLI_DISABLE_HOOKS=1` to skip that auto-install behavior.
 
 Development entrypoints such as `npm run dev` and `bin/opera-cli.ts` do not modify those hook files.
 
+## Local Setup (Full Stack)
+
+Both `opera-devtools-mcp` and `opera-cli` need to be built and linked so they're available in PATH.
+
+**1. Build and link `opera-devtools-mcp`:**
+
+```sh
+# in the opera-devtools-mcp repo
+npm install
+npm run build
+npm link
+```
+
+**2. Build and link `opera-cli`:**
+
+```sh
+# in this repo
+npm install
+npm run build
+npm link
+```
+
+**3. Set the browser executable path:**
+
+```sh
+export OPERA_CLI_EXECUTABLE_PATH="/Applications/Opera Neon Developer.app/Contents/MacOS/Opera"
+```
+
+**4. Load the skill into your agent:**
+
+Place `SKILL.md` (or the compact skill variant) where Claude or another agent can load it. Once loaded, the agent has access to the `opera-cli` skill and can use it directly.
+
 ## Development
 
 ```sh
