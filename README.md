@@ -30,10 +30,86 @@ snapshot:
 
 ## Install
 
+### From archive (no npm publish required)
+
+Prerequisites: **Node.js >= 20**, **Chrome or Opera** browser.
+
+```sh
+tar xzf opera-cli-0.1.15.tar.gz
+cd opera-cli-0.1.15
+./install.sh
+```
+
+This installs everything to `~/.opera-cli/`, creates a symlink at
+`~/.local/bin/opera-cli`, and copies the Claude Code skill to
+`~/.claude/skills/opera-cli/SKILL.md`. The unpacked archive can be deleted
+after installation.
+
+Pass a custom bin directory to symlink elsewhere:
+
+```sh
+./install.sh /usr/local/bin
+```
+
+Make sure the target directory is in your `PATH`:
+
+```sh
+# Add to your shell profile (~/.zshrc, ~/.bashrc, etc.) if not already there
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Verify the installation:
+
+```sh
+opera-cli --version
+opera-cli open https://example.com
+```
+
+To uninstall:
+
+```sh
+rm -rf ~/.opera-cli ~/.local/bin/opera-cli ~/.claude/skills/opera-cli
+```
+
+#### Building the archive yourself
+
+From the monorepo root (requires both `opera-cli/` and `opera-devtools-mcp/`):
+
+```sh
+cd opera-cli
+npm install
+(cd ../opera-devtools-mcp && npm install)
+bash scripts/dist.sh
+```
+
+This produces `opera-cli-<version>.tar.gz` in the `opera-cli/` directory.
+
+### Via npx
+
 **Tell your agent:**
 
 ```
 Execute `npx -y opera-cli` to get browser automation tools.
+```
+
+### Usage examples
+
+```sh
+# Basic navigation
+opera-cli open https://example.com
+
+# Use Opera as the browser
+OPERA_CLI_EXECUTABLE_PATH="/Applications/Opera.app/Contents/MacOS/Opera" \
+  opera-cli open https://example.com
+
+# Headed mode (visible browser window)
+OPERA_CLI_HEADED=1 opera-cli open https://example.com
+
+# Persistent profile (stay logged in across sessions)
+OPERA_CLI_USER_DATA_DIR=~/.opera-profile opera-cli open https://example.com
+
+# Connect to already-running browser
+OPERA_CLI_BROWSER_URL=http://127.0.0.1:9222 opera-cli open https://example.com
 ```
 
 ## How It Works

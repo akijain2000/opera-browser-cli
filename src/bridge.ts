@@ -271,8 +271,14 @@ export function buildTransportArgs(): string[] {
 }
 
 function createTransport(): StdioClientTransport {
-  const command = process.env.OPERA_CLI_MCP_BIN ?? "opera-devtools-mcp";
-  return new StdioClientTransport({ command, args: buildTransportArgs() });
+  const bin = process.env.OPERA_CLI_MCP_BIN ?? "opera-devtools-mcp";
+  if (bin.endsWith(".js")) {
+    return new StdioClientTransport({
+      command: "node",
+      args: [bin, ...buildTransportArgs()],
+    });
+  }
+  return new StdioClientTransport({ command: bin, args: buildTransportArgs() });
 }
 
 function createBridgeClient(): Client {
