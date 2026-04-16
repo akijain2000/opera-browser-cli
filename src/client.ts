@@ -196,7 +196,7 @@ export async function ensureBridge(): Promise<number> {
   ]);
 }
 
-const OPERA_AI_TIMEOUT = 300_000 + 10_000; // 5 minutes + buffer for MCP overhead
+const OPERA_AI_TIMEOUT = 1_200_000; // 20 minutes
 const OPERA_AI_TOOLS = new Set([
   "opera_chat",
   "opera_do",
