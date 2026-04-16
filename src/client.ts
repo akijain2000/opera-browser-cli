@@ -196,6 +196,14 @@ export async function ensureBridge(): Promise<number> {
   ]);
 }
 
+const OPERA_AI_TIMEOUT = 300_000 + 10_000; // 5 minutes + buffer for MCP overhead
+const OPERA_AI_TOOLS = new Set([
+  "opera_chat",
+  "opera_do",
+  "opera_research",
+  "opera_make",
+]);
+
 /**
  * Call an MCP tool via the bridge. Returns the text result.
  */
@@ -204,9 +212,10 @@ export async function callTool(
   args: Record<string, unknown> = {},
 ): Promise<string> {
   const port = await ensureBridge();
+  const timeoutMs = OPERA_AI_TOOLS.has(name) ? OPERA_AI_TIMEOUT : undefined;
 
   try {
-    const resp = await httpPost(port, "/call", { name, args });
+    const resp = await httpPost(port, "/call", { name, args }, timeoutMs);
     const data = JSON.parse(resp);
     if (data.error) {
       throw new Error(data.error);

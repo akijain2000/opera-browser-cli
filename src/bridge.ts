@@ -12,6 +12,7 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import {
   createServer,
   type IncomingMessage,
@@ -28,6 +29,14 @@ const DEFAULT_PORT = Number.parseInt(
 );
 const STATE_DIR = join(homedir(), ".opera-cli");
 const PID_FILE = join(STATE_DIR, "bridge.pid");
+
+const OPERA_AI_TIMEOUT = 300_000; // 5 minutes
+const OPERA_AI_TOOLS = new Set([
+  "opera_chat",
+  "opera_do",
+  "opera_research",
+  "opera_make",
+]);
 
 export interface BridgeContentBlock {
   type: string;
@@ -46,10 +55,14 @@ interface BridgeToolDescription {
 
 export interface BridgeClient {
   listTools(): Promise<{ tools: BridgeToolDescription[] }>;
-  callTool(request: {
-    name: string;
-    arguments: Record<string, unknown>;
-  }): Promise<unknown>;
+  callTool(
+    request: {
+      name: string;
+      arguments: Record<string, unknown>;
+    },
+    resultSchema?: unknown,
+    options?: RequestOptions,
+  ): Promise<unknown>;
   close(): Promise<void>;
 }
 
@@ -171,10 +184,17 @@ async function handleCallRequest(
 ): Promise<void> {
   const body = await readRequestBody(req);
   const payload = parseBridgeCallPayload(body);
-  const result = await client.callTool({
-    name: payload.name,
-    arguments: payload.args,
-  });
+  const options = OPERA_AI_TOOLS.has(payload.name)
+    ? { timeout: OPERA_AI_TIMEOUT }
+    : undefined;
+  const result = await client.callTool(
+    {
+      name: payload.name,
+      arguments: payload.args,
+    },
+    undefined,
+    options,
+  );
   writeJson(res, 200, { result: extractToolText(getToolContent(result)) });
 }
 
