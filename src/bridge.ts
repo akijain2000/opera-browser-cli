@@ -13,6 +13,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import { LoggingMessageNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import {
   createServer,
   type IncomingMessage,
@@ -184,18 +185,35 @@ async function handleCallRequest(
 ): Promise<void> {
   const body = await readRequestBody(req);
   const payload = parseBridgeCallPayload(body);
-  const options = OPERA_AI_TOOLS.has(payload.name)
-    ? { timeout: OPERA_AI_TIMEOUT }
-    : undefined;
-  const result = await client.callTool(
-    {
-      name: payload.name,
-      arguments: payload.args,
-    },
-    undefined,
-    options,
-  );
-  writeJson(res, 200, { result: extractToolText(getToolContent(result)) });
+  const isStreamable = OPERA_AI_TOOLS.has(payload.name);
+  const options = isStreamable ? { timeout: OPERA_AI_TIMEOUT } : undefined;
+
+  const previousListener = onLogMessage;
+  if (isStreamable) {
+    onLogMessage = (data) => {
+      const text = typeof data === "string" ? data : JSON.stringify(data);
+      res.write(JSON.stringify({ log: text }) + "\n");
+    };
+  }
+
+  try {
+    const result = await client.callTool(
+      {
+        name: payload.name,
+        arguments: payload.args,
+      },
+      undefined,
+      options,
+    );
+    const text = extractToolText(getToolContent(result));
+    res.statusCode = 200;
+    res.end(JSON.stringify({ result: text }));
+  } catch (error) {
+    res.statusCode = 500;
+    res.end(JSON.stringify({ error: getErrorMessage(error) }));
+  } finally {
+    onLogMessage = previousListener;
+  }
 }
 
 export async function handleBridgeRequest(
@@ -292,17 +310,27 @@ export function buildTransportArgs(): string[] {
 
 function createTransport(): StdioClientTransport {
   const bin = process.env.OPERA_CLI_MCP_BIN ?? "opera-devtools-mcp";
+  const args = buildTransportArgs();
   if (bin.endsWith(".js")) {
     return new StdioClientTransport({
       command: "node",
-      args: [bin, ...buildTransportArgs()],
+      args: [bin, ...args],
     });
   }
-  return new StdioClientTransport({ command: bin, args: buildTransportArgs() });
+  return new StdioClientTransport({ command: bin, args });
 }
 
+let onLogMessage: ((data: unknown) => void) | undefined;
+
 function createBridgeClient(): Client {
-  return new Client({ name: "opera-cli-bridge", version: "1.0.0" });
+  const client = new Client({ name: "opera-cli-bridge", version: "1.0.0" });
+  client.setNotificationHandler(
+    LoggingMessageNotificationSchema,
+    (notification) => {
+      onLogMessage?.(notification.params.data);
+    },
+  );
+  return client;
 }
 
 async function closeServer(server: Server): Promise<void> {
