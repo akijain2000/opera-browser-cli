@@ -88,6 +88,7 @@ function httpPost(
   path: string,
   body: unknown,
   timeoutMs = 120_000,
+  onLog?: (message: string) => void,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
@@ -104,13 +105,40 @@ function httpPost(
         },
       },
       (res) => {
-        let data = "";
-        res.on("data", (chunk) => (data += chunk));
+        let buffer = "";
+        res.on("data", (chunk) => {
+          buffer += chunk;
+          if (onLog) {
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+            for (const line of lines) {
+              if (!line) continue;
+              try {
+                const parsed = JSON.parse(line);
+                if (parsed.log !== undefined) {
+                  onLog(parsed.log);
+                }
+              } catch {
+                // Not a JSON log line — accumulate for final parse
+              }
+            }
+          }
+        });
         res.on("end", () => {
-          if (res.statusCode && res.statusCode >= 400) {
-            reject(new Error(data));
-          } else {
-            resolve(data);
+          const finalData = onLog ? (buffer || "{}") : buffer;
+          try {
+            const parsed = JSON.parse(finalData);
+            if (parsed.error) {
+              reject(new Error(parsed.error));
+            } else {
+              resolve(finalData);
+            }
+          } catch {
+            if (res.statusCode && res.statusCode >= 400) {
+              reject(new Error(finalData));
+            } else {
+              resolve(finalData);
+            }
           }
         });
       },
@@ -212,10 +240,14 @@ export async function callTool(
   args: Record<string, unknown> = {},
 ): Promise<string> {
   const port = await ensureBridge();
-  const timeoutMs = OPERA_AI_TOOLS.has(name) ? OPERA_AI_TIMEOUT : undefined;
+  const isStreaming = OPERA_AI_TOOLS.has(name);
+  const timeoutMs = isStreaming ? OPERA_AI_TIMEOUT : undefined;
+  const onLog = isStreaming
+    ? (msg: string) => process.stderr.write(msg + "\n")
+    : undefined;
 
   try {
-    const resp = await httpPost(port, "/call", { name, args }, timeoutMs);
+    const resp = await httpPost(port, "/call", { name, args }, timeoutMs, onLog);
     const data = JSON.parse(resp);
     if (data.error) {
       throw new Error(data.error);
