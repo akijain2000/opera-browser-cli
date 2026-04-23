@@ -155,6 +155,9 @@ if [ -f "$INSTALL_DIR/VERSION" ]; then
 fi
 
 echo ""
+echo "Next: run \`opera-cli setup\` to configure Opera Neon and enable AI commands."
+echo "      run \`opera-cli doctor\` if something looks off."
+echo ""
 echo "Done. You can now delete this directory:"
 echo "  rm -rf $SCRIPT_DIR"
 INSTALLER

@@ -61,7 +61,7 @@ describe("no-args output", () => {
     expect(output).toContain(
       "Run `opera-cli open <url>` to start browsing",
     );
-    expect(output).toContain("help[1]:");
+    expect(output).toMatch(/help\[\d+\]:/);
     expect(output).not.toContain("opera-cli run");
   });
 });

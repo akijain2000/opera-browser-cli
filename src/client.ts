@@ -3,7 +3,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
+import { mkdirSync, openSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { request } from "node:http";
@@ -13,7 +13,20 @@ import { resolveBridgeScript } from "./bridge.js";
 const STATE_DIR = join(homedir(), ".opera-cli");
 const PID_FILE = join(STATE_DIR, "bridge.pid");
 const CONFIG_FILE = join(STATE_DIR, "config");
+const LOG_FILE = join(STATE_DIR, "bridge.log");
 const DEFAULT_PORT = 9224;
+
+export function getLogFile(): string {
+  return LOG_FILE;
+}
+
+export function getStateDir(): string {
+  return STATE_DIR;
+}
+
+export function getConfigFile(): string {
+  return CONFIG_FILE;
+}
 
 /**
  * Load ~/.opera-cli/config and apply KEY=VALUE pairs as env var defaults.
@@ -223,11 +236,22 @@ export async function ensureBridge(): Promise<number> {
     : bridgeScript;
   const runner = script.endsWith(".ts") ? "tsx" : "node";
 
+  // Pipe bridge stdout/stderr to ~/.opera-cli/bridge.log so failures
+  // are inspectable. Falls back to "ignore" if the file can't be opened.
+  let stdio: "ignore" | ["ignore", number, number] = "ignore";
+  try {
+    mkdirSync(STATE_DIR, { recursive: true });
+    const logFd = openSync(LOG_FILE, "a");
+    stdio = ["ignore", logFd, logFd];
+  } catch {
+    // Log directory unwritable — bridge still runs, just no logs.
+  }
+
   const child = spawn(
     runner === "tsx" ? "npx" : "node",
     runner === "tsx" ? ["tsx", script] : [script],
     {
-      stdio: "ignore",
+      stdio,
       env: { ...process.env, OPERA_CLI_PORT: String(port) },
       detached: true,
     },
@@ -330,6 +354,39 @@ export function mapErrorMessage(message: string): CdpError {
     // Not JSON
   }
   return new CdpError(message, "UNKNOWN");
+}
+
+export interface BridgeStatus {
+  pidFileExists: boolean;
+  processAlive: boolean;
+  healthy: boolean;
+  port: number | null;
+  pid: number | null;
+}
+
+/**
+ * Inspect the bridge without starting it. Used by `opera-cli doctor`.
+ */
+export async function getBridgeStatus(): Promise<BridgeStatus> {
+  const pidInfo = readPidFile();
+  if (!pidInfo) {
+    return {
+      pidFileExists: false,
+      processAlive: false,
+      healthy: false,
+      port: null,
+      pid: null,
+    };
+  }
+  const alive = isProcessAlive(pidInfo.pid);
+  const healthy = alive ? await checkBridgeHealth(pidInfo.port) : false;
+  return {
+    pidFileExists: true,
+    processAlive: alive,
+    healthy,
+    port: pidInfo.port,
+    pid: pidInfo.pid,
+  };
 }
 
 /**

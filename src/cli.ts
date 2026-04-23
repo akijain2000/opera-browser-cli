@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
@@ -9,6 +9,9 @@ import {
   CdpError,
   callTool,
   ensureBridge,
+  getBridgeStatus,
+  getConfigFile,
+  getLogFile,
   getSessionSnapshotIfRunning,
   loadConfig,
   stopBridge,
@@ -36,7 +39,7 @@ export type MainOptions = {
 };
 
 export const TOP_HELP = `usage: opera-cli [command] [args] [flags]
-commands[39]:
+commands[41]:
   open <url>, snapshot, screenshot <path>, click @<uid>, fill @<uid> <text>,
   type <text>, press <key>, scroll <dir>, back, wait <ms|text>, eval <js>,
   run,
@@ -46,7 +49,7 @@ commands[39]:
   network-get [id], lighthouse, perf-start, perf-stop,
   perf-insight <set> <name>, heap <path>, start, stop,
   chat <prompt>, invoke-do <prompt>, make <prompt>, research <prompt>,
-  setup
+  setup, logs, doctor
 
 flags[2]:
   --help, -v/-V/--version
@@ -572,6 +575,25 @@ Requires an interactive terminal — run this directly in your shell, not throug
 
 examples:
   opera-cli setup`,
+
+  logs: `usage: opera-cli logs [-n|--lines <N>]
+Print the tail of the bridge log at ~/.opera-cli/bridge.log.
+Useful for debugging when commands fail or the bridge misbehaves.
+
+flags:
+  -n, --lines <N>  Number of trailing lines to show (default: 50)
+
+examples:
+  opera-cli logs
+  opera-cli logs --lines 200`,
+
+  doctor: `usage: opera-cli doctor
+Diagnose opera-cli configuration: bridge status, config file, Opera Neon
+executable, session hooks, and log file. Each check is reported as ok, warn,
+or fail with actionable hints.
+
+examples:
+  opera-cli doctor`,
 };
 
 export function getCommandHelp(command: string): string | null {
@@ -1540,10 +1562,85 @@ async function handleHeap(args: string[]): Promise<string> {
 
 // --- Setup wizard ---
 
-const NEON_CANDIDATE_PATHS = [
-  "/Applications/Opera Neon Developer.app/Contents/MacOS/Opera",
-  "/Applications/Opera Neon.app/Contents/MacOS/Opera",
-];
+/**
+ * Default --user-data-dir for Opera Neon. Pointing at the user's existing
+ * Neon profile means opera-cli inherits an already-signed-in session, which
+ * is what AI commands need. Derived from the detected binary so we pick the
+ * matching profile (Neon vs Neon Developer).
+ */
+function defaultNeonProfileDir(neonPath: string | undefined): string | null {
+  const home = homedir();
+  if (process.platform === "darwin") {
+    const isDeveloper =
+      !neonPath || neonPath.includes("Opera Neon Developer.app");
+    const bundle = isDeveloper
+      ? "com.operasoftware.OperaNeonDeveloper"
+      : "com.operasoftware.OperaNeon";
+    return `${home}/Library/Application Support/${bundle}/Default/Default`;
+  }
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA ?? `${home}\\AppData\\Roaming`;
+    const isDeveloper = !neonPath || neonPath.includes("Developer");
+    return isDeveloper
+      ? `${appData}\\Opera Software\\Opera Neon Developer`
+      : `${appData}\\Opera Software\\Opera Neon`;
+  }
+  return null;
+}
+
+function neonCandidatePaths(): string[] {
+  const home = homedir();
+  if (process.platform === "darwin") {
+    return [
+      "/Applications/Opera Neon Developer.app/Contents/MacOS/Opera",
+      "/Applications/Opera Neon.app/Contents/MacOS/Opera",
+      `${home}/Applications/Opera Neon Developer.app/Contents/MacOS/Opera`,
+      `${home}/Applications/Opera Neon.app/Contents/MacOS/Opera`,
+    ];
+  }
+  if (process.platform === "win32") {
+    const localAppData = process.env.LOCALAPPDATA ?? `${home}\\AppData\\Local`;
+    const programFiles = process.env.PROGRAMFILES ?? "C:\\Program Files";
+    return [
+      `${localAppData}\\Programs\\Opera Neon\\opera.exe`,
+      `${localAppData}\\Programs\\Opera Neon Developer\\opera.exe`,
+      `${programFiles}\\Opera Neon\\opera.exe`,
+      `${programFiles}\\Opera Neon Developer\\opera.exe`,
+    ];
+  }
+  // Opera Neon does not ship for Linux.
+  return [];
+}
+
+function operaCandidatePaths(): string[] {
+  const home = homedir();
+  if (process.platform === "darwin") {
+    return [
+      "/Applications/Opera GX.app/Contents/MacOS/Opera",
+      "/Applications/Opera.app/Contents/MacOS/Opera",
+      `${home}/Applications/Opera GX.app/Contents/MacOS/Opera`,
+      `${home}/Applications/Opera.app/Contents/MacOS/Opera`,
+    ];
+  }
+  if (process.platform === "win32") {
+    const localAppData = process.env.LOCALAPPDATA ?? `${home}\\AppData\\Local`;
+    const programFiles = process.env.PROGRAMFILES ?? "C:\\Program Files";
+    return [
+      `${localAppData}\\Programs\\Opera GX\\opera.exe`,
+      `${localAppData}\\Programs\\Opera\\opera.exe`,
+      `${programFiles}\\Opera GX\\opera.exe`,
+      `${programFiles}\\Opera\\opera.exe`,
+    ];
+  }
+  return [];
+}
+
+function browserDisplayName(binPath: string): string {
+  if (binPath.includes("Neon Developer")) return "Opera Neon Developer";
+  if (binPath.includes("Neon")) return "Opera Neon";
+  if (binPath.includes("GX")) return "Opera GX";
+  return "Opera";
+}
 
 async function handleSetup(_args: string[]): Promise<string> {
   if (!process.stdin.isTTY) {
@@ -1577,65 +1674,77 @@ async function handleSetup(_args: string[]): Promise<string> {
   try {
     process.stdout.write("opera-cli setup\n\n");
 
-    // 1. Opera Neon executable path
-    const detectedNeon = NEON_CANDIDATE_PATHS.find((p) => existsSync(p));
+    // 1. Browser executable path
+    const detectedNeon = neonCandidatePaths().find((p) => existsSync(p));
+    const detectedOpera = operaCandidatePaths().find((p) => existsSync(p));
     const currentExec = existing["OPERA_CLI_EXECUTABLE_PATH"];
 
     if (detectedNeon && !currentExec) {
-      process.stdout.write(`Detected Opera Neon at:\n  ${detectedNeon}\n`);
-      const ans = (await ask("Use this for AI commands? [Y/n]: "))
-        .trim()
-        .toLowerCase();
-      if (ans === "" || ans === "y") {
-        config["OPERA_CLI_EXECUTABLE_PATH"] = detectedNeon;
-      }
-    } else {
-      const current = currentExec ? ` [${currentExec}]` : "";
+      const name = browserDisplayName(detectedNeon);
+      process.stdout.write(`Detected ${name} at:\n  ${detectedNeon}\nUsing it as the browser.\n`);
+      config["OPERA_CLI_EXECUTABLE_PATH"] = detectedNeon;
+    } else if (currentExec) {
+      process.stdout.write(`Browser binary: ${currentExec}\n`);
       const ans = (
         await ask(
-          `Path to Opera Neon binary (leave blank to keep${current || " system Chrome"}): `,
+          'Change it? (enter new path, "clear" to remove, or press Enter to keep): ',
         )
       ).trim();
-      if (ans) {
-        config["OPERA_CLI_EXECUTABLE_PATH"] = ans;
-      } else if (!currentExec) {
+      if (ans.toLowerCase() === "clear") {
         delete config["OPERA_CLI_EXECUTABLE_PATH"];
+      } else if (ans) {
+        config["OPERA_CLI_EXECUTABLE_PATH"] = ans;
+      }
+    } else {
+      process.stdout.write(
+        "Opera Neon not found. Install it from https://www.operaneon.com to enable AI commands (chat, invoke-do, make, research).\n",
+      );
+      if (detectedOpera) {
+        const operaName = browserDisplayName(detectedOpera);
+        process.stdout.write(`\nFound ${operaName} at:\n  ${detectedOpera}\n`);
+        const ans = (
+          await ask(
+            `Use ${operaName} as the browser? (AI commands require Opera Neon) [Y/n]: `,
+          )
+        )
+          .trim()
+          .toLowerCase();
+        if (ans === "" || ans === "y") {
+          config["OPERA_CLI_EXECUTABLE_PATH"] = detectedOpera;
+        }
       }
     }
 
-    // 2. Headed mode
-    const currentHeaded = existing["OPERA_CLI_HEADED"] === "1";
+    // 2. Headed mode (defaults to Y so users see the browser they're driving)
     const headedAns = (
-      await ask(`Run in headed (visible) mode? [${currentHeaded ? "Y/n" : "y/N"}]: `)
+      await ask("Run in headed (visible) mode? [Y/n]: ")
     )
       .trim()
       .toLowerCase();
-    if (headedAns === "y") {
-      config["OPERA_CLI_HEADED"] = "1";
-    } else if (headedAns === "n" || (headedAns === "" && !currentHeaded)) {
+    if (headedAns === "n") {
       delete config["OPERA_CLI_HEADED"];
+    } else {
+      config["OPERA_CLI_HEADED"] = "1";
     }
 
-    // 3. Persistent profile directory
+    // 3. Persistent profile directory (defaults to the detected Neon profile
+    // so opera-cli inherits an already-signed-in session)
     const currentProfile = existing["OPERA_CLI_USER_DATA_DIR"] ?? "";
-    const defaultProfile = join(stateDir, "profile");
-    const profileHint = currentProfile || defaultProfile;
+    const defaultProfile =
+      currentProfile ||
+      defaultNeonProfileDir(config["OPERA_CLI_EXECUTABLE_PATH"]) ||
+      join(stateDir, "profile");
     const profileAns = (
       await ask(
-        `Persistent profile directory (blank to ${currentProfile ? "keep current" : "skip"}):\n  [${profileHint}]: `,
+        `Persistent profile directory (blank to use default, "skip" to omit):\n  [${defaultProfile}]: `,
       )
     ).trim();
-    if (profileAns) {
+    if (profileAns.toLowerCase() === "skip") {
+      delete config["OPERA_CLI_USER_DATA_DIR"];
+    } else if (profileAns) {
       config["OPERA_CLI_USER_DATA_DIR"] = profileAns;
-    } else if (!currentProfile) {
-      const useDefault = (
-        await ask(`Use default profile dir? [y/N]: `)
-      )
-        .trim()
-        .toLowerCase();
-      if (useDefault === "y") {
-        config["OPERA_CLI_USER_DATA_DIR"] = defaultProfile;
-      }
+    } else {
+      config["OPERA_CLI_USER_DATA_DIR"] = defaultProfile;
     }
   } finally {
     rl.close();
@@ -1663,7 +1772,317 @@ async function handleSetup(_args: string[]): Promise<string> {
   ]);
 }
 
+// --- Doctor ---
+
+interface DoctorCheck {
+  name: string;
+  status: "ok" | "warn" | "fail";
+  detail: string;
+}
+
+function fileContainsMarker(path: string, marker: string): boolean {
+  if (!existsSync(path)) return false;
+  try {
+    return readFileSync(path, "utf-8").includes(marker);
+  } catch {
+    return false;
+  }
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+async function runDoctorChecks(): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+
+  // Bridge
+  const bridge = await getBridgeStatus();
+  if (!bridge.pidFileExists) {
+    checks.push({
+      name: "bridge",
+      status: "warn",
+      detail: "not running (will auto-start on first command)",
+    });
+  } else if (!bridge.processAlive) {
+    checks.push({
+      name: "bridge",
+      status: "fail",
+      detail: `pid ${bridge.pid} in pid file but process is dead`,
+    });
+  } else if (!bridge.healthy) {
+    checks.push({
+      name: "bridge",
+      status: "fail",
+      detail: `pid ${bridge.pid} alive on port ${bridge.port} but /health did not respond`,
+    });
+  } else {
+    checks.push({
+      name: "bridge",
+      status: "ok",
+      detail: `running, pid ${bridge.pid}, port ${bridge.port}`,
+    });
+  }
+
+  // Config file
+  const configFile = getConfigFile();
+  if (!existsSync(configFile)) {
+    checks.push({
+      name: "config",
+      status: "warn",
+      detail: `${configFile} not found — run \`opera-cli setup\``,
+    });
+  } else {
+    const lines = readFileSync(configFile, "utf-8")
+      .split("\n")
+      .filter((l) => l.trim() && !l.trim().startsWith("#"));
+    checks.push({
+      name: "config",
+      status: "ok",
+      detail: `${configFile} (${lines.length} var${lines.length === 1 ? "" : "s"} set)`,
+    });
+  }
+
+  // Opera Neon executable
+  const execPath = process.env.OPERA_CLI_EXECUTABLE_PATH;
+  const browserUrl = process.env.OPERA_CLI_BROWSER_URL;
+  if (browserUrl) {
+    checks.push({
+      name: "neon",
+      status: "ok",
+      detail: `OPERA_CLI_BROWSER_URL=${browserUrl} (skipping executable check)`,
+    });
+  } else if (!execPath) {
+    checks.push({
+      name: "neon",
+      status: "warn",
+      detail: "OPERA_CLI_EXECUTABLE_PATH not set — AI commands will fail",
+    });
+  } else if (!existsSync(execPath)) {
+    checks.push({
+      name: "neon",
+      status: "fail",
+      detail: `OPERA_CLI_EXECUTABLE_PATH=${execPath} does not exist`,
+    });
+  } else {
+    checks.push({
+      name: "neon",
+      status: "ok",
+      detail: execPath,
+    });
+  }
+
+  // Session hooks
+  const home = homedir();
+  const claudeSettings = join(home, ".claude", "settings.json");
+  const codexHooks = join(home, ".codex", "hooks.json");
+  const claudeHas = fileContainsMarker(claudeSettings, "opera-cli");
+  const codexHas = fileContainsMarker(codexHooks, "opera-cli");
+  if (!claudeHas && !codexHas) {
+    checks.push({
+      name: "hooks",
+      status: "warn",
+      detail: "no opera-cli session hook found in .claude or .codex configs",
+    });
+  } else {
+    const installed: string[] = [];
+    if (claudeHas) installed.push("claude");
+    if (codexHas) installed.push("codex");
+    checks.push({
+      name: "hooks",
+      status: "ok",
+      detail: `installed for ${installed.join(", ")}`,
+    });
+  }
+
+  // Log file
+  const logFile = getLogFile();
+  if (!existsSync(logFile)) {
+    checks.push({
+      name: "logs",
+      status: "warn",
+      detail: `${logFile} not yet created`,
+    });
+  } else {
+    try {
+      const size = statSync(logFile).size;
+      checks.push({
+        name: "logs",
+        status: "ok",
+        detail: `${logFile} (${formatBytes(size)})`,
+      });
+    } catch {
+      checks.push({
+        name: "logs",
+        status: "warn",
+        detail: `${logFile} exists but cannot stat`,
+      });
+    }
+  }
+
+  return checks;
+}
+
+async function handleDoctor(_args: string[]): Promise<string> {
+  const checks = await runDoctorChecks();
+  const summary = {
+    ok: checks.filter((c) => c.status === "ok").length,
+    warn: checks.filter((c) => c.status === "warn").length,
+    fail: checks.filter((c) => c.status === "fail").length,
+  };
+
+  const lines = checks.map((c) => `  ${c.name}: ${c.status} (${c.detail})`);
+  const checksBlock = `checks[${checks.length}]:\n${lines.join("\n")}`;
+
+  const help: string[] = [];
+  if (checks.some((c) => c.name === "config" && c.status !== "ok")) {
+    help.push("Run `opera-cli setup` to write a config file");
+  }
+  if (checks.some((c) => c.name === "neon" && c.status !== "ok")) {
+    help.push(
+      "Run `opera-cli setup` to detect Opera Neon, or set OPERA_CLI_EXECUTABLE_PATH",
+    );
+  }
+  if (checks.some((c) => c.name === "bridge" && c.status === "fail")) {
+    help.push("Run `opera-cli stop` then any command to restart the bridge");
+    help.push("Run `opera-cli logs` to see why the bridge is unhealthy");
+  }
+  if (checks.some((c) => c.name === "hooks" && c.status !== "ok")) {
+    help.push(
+      "Reinstall opera-cli to register session hooks, or set OPERA_CLI_DISABLE_HOOKS=1 to silence",
+    );
+  }
+
+  return renderOutput([
+    encode({ doctor: summary }),
+    checksBlock,
+    help.length > 0 ? renderHelp(help) : "",
+  ]);
+}
+
+// --- Logs ---
+
+const LOGS_DEFAULT_LINES = 50;
+
+function parseLogsArgs(args: string[]): { lines: number } {
+  let lines = LOGS_DEFAULT_LINES;
+  for (let i = 0; i < args.length; i++) {
+    if ((args[i] === "-n" || args[i] === "--lines") && i + 1 < args.length) {
+      const parsed = parseInt(args[++i] ?? "", 10);
+      if (Number.isFinite(parsed) && parsed > 0) lines = parsed;
+    }
+  }
+  return { lines };
+}
+
+async function handleLogs(args: string[]): Promise<string> {
+  const { lines } = parseLogsArgs(args);
+  const logFile = getLogFile();
+  if (!existsSync(logFile)) {
+    return renderOutput([
+      encode({ logs: "no log file yet", path: logFile }),
+      renderHelp([
+        "Run any command (e.g. `opera-cli open <url>`) to start the bridge",
+      ]),
+    ]);
+  }
+  const content = readFileSync(logFile, "utf-8");
+  const allLines = content.split("\n");
+  // Drop trailing empty line from final newline
+  if (allLines.length > 0 && allLines[allLines.length - 1] === "") {
+    allLines.pop();
+  }
+  const tail = allLines.slice(-lines);
+  return renderOutput([
+    encode({ path: logFile, lines: tail.length, total: allLines.length }),
+    tail.join("\n"),
+    renderHelp([
+      `Run \`opera-cli logs --lines <N>\` to show more (default ${LOGS_DEFAULT_LINES})`,
+      `Tail live: \`tail -f ${logFile}\``,
+    ]),
+  ]);
+}
+
 // --- Opera AI handlers ---
+
+/**
+ * Pre-flight check for AI commands. Fails fast if Opera Neon is clearly
+ * not configured, so we don't pay the 30s bridge-startup tax just to surface
+ * a confusing protocol error.
+ *
+ * Skipped when OPERA_CLI_BROWSER_URL is set — the user manages the browser
+ * themselves and presumably knows it's Opera Neon.
+ */
+function requireNeon(command: string): void {
+  if (process.env.OPERA_CLI_BROWSER_URL) return;
+  const execPath = process.env.OPERA_CLI_EXECUTABLE_PATH;
+  if (execPath && existsSync(execPath)) return;
+
+  const reason = execPath
+    ? `OPERA_CLI_EXECUTABLE_PATH points at "${execPath}" which does not exist`
+    : "OPERA_CLI_EXECUTABLE_PATH is not set — opera-cli would launch vanilla Chrome, which has no Opera AI";
+  throw new CdpError(
+    `${command} requires Opera Neon — ${reason}`,
+    "VALIDATION_ERROR",
+    [
+      "Run `opera-cli setup` to detect and configure Opera Neon",
+      "Or set OPERA_CLI_EXECUTABLE_PATH to your Opera Neon binary",
+      "Run `opera-cli doctor` to inspect the current configuration",
+    ],
+  );
+}
+
+/**
+ * Opera Neon returns the "not signed in" message as text content on a
+ * successful tool call (no MCP isError flag), so callTool resolves rather
+ * than throws. Detect it here and convert to a CdpError so the UX matches
+ * the thrown-error path.
+ */
+function checkAiResultForSignInError(command: string, result: string): void {
+  if (
+    result.includes("User is not signed in") ||
+    (result.includes("Opera.dispatchAction") &&
+      result.includes("not signed in"))
+  ) {
+    throw new CdpError(
+      "Opera Neon: user is not signed in",
+      "BROWSER_ERROR",
+      [
+        `Open Opera Neon and sign in to your Opera account, then re-run \`opera-cli ${command}\``,
+        "AI commands (chat, invoke-do, make, research) require an active sign-in",
+        "Run `opera-cli doctor` to inspect the current configuration",
+      ],
+    );
+  }
+}
+
+async function callAiTool(
+  command: string,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<string> {
+  try {
+    return await callTool(name, args);
+  } catch (error) {
+    if (
+      error instanceof CdpError &&
+      /dispatcher was not able to dispatch|no target/i.test(error.message)
+    ) {
+      throw new CdpError(
+        `${command} requires Opera Neon — the connected browser does not support Opera AI`,
+        "BROWSER_ERROR",
+        [
+          "Install Opera Neon from https://www.operaneon.com",
+          "Run `opera-cli setup` to configure the Opera Neon executable path",
+          "Run `opera-cli doctor` to inspect the current configuration",
+        ],
+      );
+    }
+    throw error;
+  }
+}
 
 async function handleChat(args: string[]): Promise<string> {
   const prompt = args.join(" ");
@@ -1672,7 +2091,9 @@ async function handleChat(args: string[]): Promise<string> {
       'Run `opera-cli chat "What is on this page?"` to chat with Opera AI',
     ]);
   }
-  const result = await callTool("opera_chat", { prompt });
+  requireNeon("chat");
+  const result = await callAiTool("chat", "opera_chat", { prompt });
+  checkAiResultForSignInError("chat", result);
   return formatMcpResult("result", result, []);
 }
 
@@ -1683,7 +2104,9 @@ async function handleInvokeDo(args: string[]): Promise<string> {
       'Run `opera-cli invoke-do "Click the login button"` to perform an action',
     ]);
   }
-  const result = await callTool("opera_do", { prompt });
+  requireNeon("invoke-do");
+  const result = await callAiTool("invoke-do", "opera_do", { prompt });
+  checkAiResultForSignInError("invoke-do", result);
   return formatMcpResult("result", result, []);
 }
 
@@ -1694,7 +2117,9 @@ async function handleMake(args: string[]): Promise<string> {
       'Run `opera-cli make "A summary of this page"` to create something',
     ]);
   }
-  const result = await callTool("opera_make", { prompt });
+  requireNeon("make");
+  const result = await callAiTool("make", "opera_make", { prompt });
+  checkAiResultForSignInError("make", result);
   return formatMcpResult("result", result, []);
 }
 
@@ -1735,9 +2160,11 @@ async function handleResearch(args: string[]): Promise<string> {
       ["Valid types: local, one-minute, deep"],
     );
   }
+  requireNeon("research");
   const toolArgs: Record<string, unknown> = { prompt };
   if (researchType !== undefined) toolArgs.researchType = researchType;
-  const result = await callTool("opera_research", toolArgs);
+  const result = await callAiTool("research", "opera_research", toolArgs);
+  checkAiResultForSignInError("research", result);
   return formatMcpResult("result", result, []);
 }
 
@@ -1758,11 +2185,18 @@ async function handleRun(): Promise<string> {
 }
 
 async function handleHome(_full: boolean): Promise<string> {
+  const configExists = existsSync(join(homedir(), ".opera-cli", "config"));
   const result = await getSessionSnapshotIfRunning();
   if (!result) {
+    const help: string[] = ["Run `opera-cli open <url>` to start browsing"];
+    if (!configExists) {
+      help.push(
+        "Run `opera-cli setup` to configure Opera Neon (first-time setup)",
+      );
+    }
     return renderOutput([
       encode({ browser: "no active session" }),
-      renderHelp(["Run `opera-cli open <url>` to start browsing"]),
+      renderHelp(help),
     ]);
   }
   const snapshot = stripSnapshotHeader(result);
@@ -1836,6 +2270,8 @@ const COMMANDS: Record<string, CommandFn> = {
   make: withoutFullFlag(handleMake),
   research: withoutFullFlag(handleResearch),
   setup: withoutFullFlag(handleSetup),
+  logs: withoutFullFlag(handleLogs),
+  doctor: withoutFullFlag(handleDoctor),
 };
 
 export async function main(

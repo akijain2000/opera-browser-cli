@@ -15,3 +15,5 @@ Run `opera-cli --help` for the full command list, or `opera-cli <command> --help
 ```bash
 opera-cli open https://example.com   # start here — navigate and snapshot the page
 ```
+
+If a user hits `Opera Neon: user is not signed in` or wants to use AI commands, suggest they run `opera-cli setup` (interactive wizard) and sign in to Opera Neon. Run `opera-cli doctor` to diagnose configuration issues.
