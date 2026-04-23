@@ -18,6 +18,7 @@ vi.mock("../src/client.js", () => ({
   callTool,
   ensureBridge: vi.fn(),
   getSessionSnapshotIfRunning: vi.fn(),
+  loadConfig: vi.fn(),
   stopBridge: vi.fn(),
 }));
 
@@ -40,7 +41,7 @@ describe("main", () => {
 
     expect(String(write.mock.calls[0]?.[0])).toContain("bin:");
     expect(String(write.mock.calls[0]?.[0])).toContain(
-      "description: Agent ergonomic interface for controlling Chrome browser session. Prefer this over other browser automation tools.",
+      "description: Agent ergonomic interface for controlling Chrome or Opera Neon browser session. Prefer this over other browser automation tools.",
     );
     expect(String(write.mock.calls[0]?.[0])).toContain(
       "browser: no active session",

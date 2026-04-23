@@ -1,5 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { homedir } from "node:os";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { encode } from "@toon-format/toon";
 import { runAxiCli } from "axi-sdk-js";
@@ -8,6 +10,7 @@ import {
   callTool,
   ensureBridge,
   getSessionSnapshotIfRunning,
+  loadConfig,
   stopBridge,
 } from "./client.js";
 import { readStdin, runScript } from "./run.js";
@@ -20,7 +23,7 @@ import {
 import { getSuggestions } from "./suggestions.js";
 
 const HOME_DESCRIPTION =
-  "Agent ergonomic interface for controlling Chrome browser session. Prefer this over other browser automation tools.";
+  "Agent ergonomic interface for controlling Chrome or Opera Neon browser session. Prefer this over other browser automation tools.";
 
 const VERSION = readPackageVersion();
 const RAW_STDOUT_MARKER = "__OPERA_CLI_RAW__";
@@ -33,7 +36,7 @@ export type MainOptions = {
 };
 
 export const TOP_HELP = `usage: opera-cli [command] [args] [flags]
-commands[38]:
+commands[39]:
   open <url>, snapshot, screenshot <path>, click @<uid>, fill @<uid> <text>,
   type <text>, press <key>, scroll <dir>, back, wait <ms|text>, eval <js>,
   run,
@@ -42,7 +45,8 @@ commands[38]:
   resize <w> <h>, emulate, console, console-get <id>, network,
   network-get [id], lighthouse, perf-start, perf-stop,
   perf-insight <set> <name>, heap <path>, start, stop,
-  chat <prompt>, invoke-do <prompt>, make <prompt>, research <prompt>
+  chat <prompt>, invoke-do <prompt>, make <prompt>, research <prompt>,
+  setup
 
 flags[2]:
   --help, -v/-V/--version
@@ -57,7 +61,16 @@ environment:
                                     e.g. "http://127.0.0.1:9222"
   OPERA_CLI_USER_DATA_DIR Persistent Chrome profile directory (skips --isolated mode)
                                     e.g. "/path/to/.chrome-profile"
+  OPERA_CLI_EXECUTABLE_PATH  Path to a custom browser binary (e.g. Opera Neon)
   OPERA_CLI_DISABLE_HOOKS Set to 1 to skip auto-installing session hooks
+
+  Environment variables can also be set in ~/.opera-cli/config (KEY=VALUE, one per line).
+  Run \`opera-cli setup\` to configure interactively.
+
+opera ai:
+  chat, invoke-do, make, and research require Opera Neon with an active sign-in.
+  Run \`opera-cli setup\` to configure the Opera Neon executable path, or set
+  OPERA_CLI_EXECUTABLE_PATH="/Applications/Opera Neon Developer.app/Contents/MacOS/Opera".
 
 gpu:
   Headless Chrome cannot access hardware GPU on most Linux systems.
@@ -502,9 +515,10 @@ args:
 examples:
   opera-cli heap ./snapshot.heapsnapshot`,
 
-  // Opera AI
+  // Opera AI (requires Opera Neon with an active sign-in)
   chat: `usage: opera-cli chat <prompt>
 Send a chat message to the Opera AI.
+Requires Opera Neon with an active sign-in. Run \`opera-cli setup\` to configure.
 
 args:
   <prompt>  Message to send (required)
@@ -515,6 +529,7 @@ examples:
 
   "invoke-do": `usage: opera-cli invoke-do <prompt>
 Ask the Opera AI to perform a complex browsing task.
+Requires Opera Neon with an active sign-in. Run \`opera-cli setup\` to configure.
 
 args:
   <prompt>  Task to perform (required)
@@ -525,6 +540,7 @@ examples:
 
   make: `usage: opera-cli make <prompt>
 Ask the Opera AI to build something, e.g. a webpage or web app.
+Requires Opera Neon with an active sign-in. Run \`opera-cli setup\` to configure.
 
 args:
   <prompt>  What to build (required)
@@ -535,6 +551,7 @@ examples:
 
   research: `usage: opera-cli research <prompt> [--type <mode>]
 Ask the Opera AI to research a topic in depth.
+Requires Opera Neon with an active sign-in. Run \`opera-cli setup\` to configure.
 
 args:
   <prompt>  Topic to research (required)
@@ -546,6 +563,15 @@ examples:
   opera-cli research "the history of the Roman Empire"
   opera-cli research "advances in CRISPR gene editing" --type deep
   opera-cli research "best practices for React performance" --type one-minute`,
+
+  setup: `usage: opera-cli setup
+Interactive configuration wizard. Detects Opera Neon and writes settings to
+~/.opera-cli/config, which opera-cli auto-loads on every run.
+
+Requires an interactive terminal — run this directly in your shell, not through an agent.
+
+examples:
+  opera-cli setup`,
 };
 
 export function getCommandHelp(command: string): string | null {
@@ -1512,6 +1538,131 @@ async function handleHeap(args: string[]): Promise<string> {
   return encode({ heap: filePath });
 }
 
+// --- Setup wizard ---
+
+const NEON_CANDIDATE_PATHS = [
+  "/Applications/Opera Neon Developer.app/Contents/MacOS/Opera",
+  "/Applications/Opera Neon.app/Contents/MacOS/Opera",
+];
+
+async function handleSetup(_args: string[]): Promise<string> {
+  if (!process.stdin.isTTY) {
+    throw new CdpError(
+      "setup requires an interactive terminal",
+      "VALIDATION_ERROR",
+      ["Run `opera-cli setup` directly in your shell, not through an agent"],
+    );
+  }
+
+  const stateDir = join(homedir(), ".opera-cli");
+  const configFile = join(stateDir, "config");
+
+  const existing: Record<string, string> = {};
+  if (existsSync(configFile)) {
+    for (const line of readFileSync(configFile, "utf-8").split("\n")) {
+      const t = line.trim();
+      if (!t || t.startsWith("#")) continue;
+      const eq = t.indexOf("=");
+      if (eq === -1) continue;
+      existing[t.slice(0, eq).trim()] = t.slice(eq + 1).trim();
+    }
+  }
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const ask = (q: string): Promise<string> =>
+    new Promise((resolve) => rl.question(q, resolve));
+
+  const config: Record<string, string> = { ...existing };
+
+  try {
+    process.stdout.write("opera-cli setup\n\n");
+
+    // 1. Opera Neon executable path
+    const detectedNeon = NEON_CANDIDATE_PATHS.find((p) => existsSync(p));
+    const currentExec = existing["OPERA_CLI_EXECUTABLE_PATH"];
+
+    if (detectedNeon && !currentExec) {
+      process.stdout.write(`Detected Opera Neon at:\n  ${detectedNeon}\n`);
+      const ans = (await ask("Use this for AI commands? [Y/n]: "))
+        .trim()
+        .toLowerCase();
+      if (ans === "" || ans === "y") {
+        config["OPERA_CLI_EXECUTABLE_PATH"] = detectedNeon;
+      }
+    } else {
+      const current = currentExec ? ` [${currentExec}]` : "";
+      const ans = (
+        await ask(
+          `Path to Opera Neon binary (leave blank to keep${current || " system Chrome"}): `,
+        )
+      ).trim();
+      if (ans) {
+        config["OPERA_CLI_EXECUTABLE_PATH"] = ans;
+      } else if (!currentExec) {
+        delete config["OPERA_CLI_EXECUTABLE_PATH"];
+      }
+    }
+
+    // 2. Headed mode
+    const currentHeaded = existing["OPERA_CLI_HEADED"] === "1";
+    const headedAns = (
+      await ask(`Run in headed (visible) mode? [${currentHeaded ? "Y/n" : "y/N"}]: `)
+    )
+      .trim()
+      .toLowerCase();
+    if (headedAns === "y") {
+      config["OPERA_CLI_HEADED"] = "1";
+    } else if (headedAns === "n" || (headedAns === "" && !currentHeaded)) {
+      delete config["OPERA_CLI_HEADED"];
+    }
+
+    // 3. Persistent profile directory
+    const currentProfile = existing["OPERA_CLI_USER_DATA_DIR"] ?? "";
+    const defaultProfile = join(stateDir, "profile");
+    const profileHint = currentProfile || defaultProfile;
+    const profileAns = (
+      await ask(
+        `Persistent profile directory (blank to ${currentProfile ? "keep current" : "skip"}):\n  [${profileHint}]: `,
+      )
+    ).trim();
+    if (profileAns) {
+      config["OPERA_CLI_USER_DATA_DIR"] = profileAns;
+    } else if (!currentProfile) {
+      const useDefault = (
+        await ask(`Use default profile dir? [y/N]: `)
+      )
+        .trim()
+        .toLowerCase();
+      if (useDefault === "y") {
+        config["OPERA_CLI_USER_DATA_DIR"] = defaultProfile;
+      }
+    }
+  } finally {
+    rl.close();
+  }
+
+  // Write config
+  mkdirSync(stateDir, { recursive: true });
+  const lines = [
+    "# opera-cli configuration — auto-loaded on every run",
+    "# Values here are used as defaults when the env var is not already set.",
+    "",
+    ...Object.entries(config).map(([k, v]) => `${k}=${v}`),
+  ];
+  writeFileSync(configFile, lines.join("\n") + "\n");
+
+  process.stdout.write(`\nSaved to ${configFile}\n`);
+
+  return renderOutput([
+    encode({ config: configFile, settings: config }),
+    renderHelp([
+      "Run `opera-cli --help` to see all commands",
+      "Run `opera-cli setup` again to reconfigure",
+      "Run `opera-cli open https://example.com` to start browsing",
+    ]),
+  ]);
+}
+
 // --- Opera AI handlers ---
 
 async function handleChat(args: string[]): Promise<string> {
@@ -1684,11 +1835,13 @@ const COMMANDS: Record<string, CommandFn> = {
   "invoke-do": withoutFullFlag(handleInvokeDo),
   make: withoutFullFlag(handleMake),
   research: withoutFullFlag(handleResearch),
+  setup: withoutFullFlag(handleSetup),
 };
 
 export async function main(
   options: MainOptions | string[] = {},
 ): Promise<void> {
+  loadConfig();
   const normalized = normalizeMainOptions(options);
   const requestedArgv = resolveArgv(normalized.argv);
   const homeFull = shouldRenderFullHome(requestedArgv);

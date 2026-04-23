@@ -48,8 +48,8 @@ cp "$MCP_ROOT/package.json" "$DIST_DIR/opera-devtools-mcp/"
 echo "opera-cli=${VERSION}" > "$DIST_DIR/VERSIONS"
 echo "opera-devtools-mcp=${MCP_VERSION}" >> "$DIST_DIR/VERSIONS"
 
-# ── 7. Copy SKILL.md ────────────────────────────────────────────────────────
-cp "$CLI_ROOT/SKILL.md" "$DIST_DIR/SKILL.md"
+# ── 7. Copy SKILL.compact.md (installed as the Claude Code skill) ───────────
+cp "$CLI_ROOT/SKILL.compact.md" "$DIST_DIR/SKILL.md"
 
 # ── 8. Create bin/opera-cli wrapper ──────────────────────────────────────────
 cat > "$DIST_DIR/bin/opera-cli" << 'WRAPPER'

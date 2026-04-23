@@ -1,6 +1,6 @@
 ---
 name: opera-cli
-description: Browser automation and web interaction using the opera-cli tool. Use for navigating pages, clicking elements, filling forms, taking screenshots, inspecting console/network, and running performance audits.
+description: Browser automation and web interaction using the opera-cli tool. Use for navigating pages, clicking elements, filling forms, taking screenshots, inspecting console/network, running performance audits, and Opera Neon AI features (chat, invoke-do, make, research) when Opera Neon is the active browser.
 ---
 
 # Skill: opera-cli Browser Automation
@@ -115,9 +115,25 @@ opera-cli perf-insight <set-id> LCPBreakdown
 opera-cli heap ./snapshot.heapsnapshot   # heap dump
 ```
 
+## Opera vs Opera Neon
+
+`opera-cli` works with any Chrome/Chromium-based browser (launched headless by default). **Opera Neon** is a flavour of Opera with built-in AI features.
+
+- Standard commands (`open`, `click`, `fill`, etc.) work with any Chrome session.
+- AI commands (`chat`, `invoke-do`, `make`, `research`) require **Opera Neon** with an active sign-in. If the user is not signed in you will see: `Opera Neon: user is not signed in`.
+
+To point opera-cli at Opera Neon, run the interactive setup wizard:
+```bash
+opera-cli setup
+```
+Or set the env var directly:
+```bash
+OPERA_CLI_EXECUTABLE_PATH="/Applications/Opera Neon Developer.app/Contents/MacOS/Opera" opera-cli open https://example.com
+```
+
 ## Opera AI
 
-Use Opera's built-in AI to chat, act, create, and research directly from the CLI.
+Use Opera Neon's built-in AI to chat, act, create, and research directly from the CLI.
 
 ```bash
 # Chat — conversational AI
@@ -149,12 +165,9 @@ Research types: `local` (default), `one-minute`, `deep`.
 | `OPERA_CLI_PORT=9224` | Bridge server port |
 | `OPERA_CLI_BROWSER_URL=http://127.0.0.1:9222` | Connect to existing Chrome |
 | `OPERA_CLI_USER_DATA_DIR=/path/to/profile` | Persistent Chrome profile |
-| `OPERA_CLI_EXECUTABLE_PATH="/path/to/opera"` | Custom browser binary |
+| `OPERA_CLI_EXECUTABLE_PATH="/path/to/opera"` | Custom browser binary (e.g. Opera Neon) |
 
-For Opera Neon Developer:
-```bash
-OPERA_CLI_EXECUTABLE_PATH="/Applications/Opera Neon Developer.app/Contents/MacOS/Opera" opera-cli open https://example.com
-```
+All variables can also be stored in `~/.opera-cli/config` (KEY=VALUE, one per line) and are auto-loaded on every run. Use `opera-cli setup` to configure interactively.
 
 ## Common workflows
 

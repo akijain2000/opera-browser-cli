@@ -12,7 +12,32 @@ import { resolveBridgeScript } from "./bridge.js";
 
 const STATE_DIR = join(homedir(), ".opera-cli");
 const PID_FILE = join(STATE_DIR, "bridge.pid");
+const CONFIG_FILE = join(STATE_DIR, "config");
 const DEFAULT_PORT = 9224;
+
+/**
+ * Load ~/.opera-cli/config and apply KEY=VALUE pairs as env var defaults.
+ * Only sets a var if it is not already set in the environment.
+ */
+export function loadConfig(): void {
+  if (!existsSync(CONFIG_FILE)) return;
+  try {
+    const lines = readFileSync(CONFIG_FILE, "utf-8").split("\n");
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eq = trimmed.indexOf("=");
+      if (eq === -1) continue;
+      const key = trimmed.slice(0, eq).trim();
+      const value = trimmed.slice(eq + 1).trim();
+      if (key && !(key in process.env)) {
+        process.env[key] = value;
+      }
+    }
+  } catch {
+    // Best-effort — never fail over a missing or malformed config
+  }
+}
 
 export type ErrorCode =
   | "BRIDGE_NOT_READY"
@@ -277,6 +302,21 @@ export function mapErrorMessage(message: string): CdpError {
     return new CdpError(message, "TIMEOUT", [
       "Run `opera-cli snapshot` to see current page state",
     ]);
+  }
+  if (
+    message.includes("User is not signed in") ||
+    (message.includes("Opera.dispatchAction") &&
+      message.includes("not signed in"))
+  ) {
+    return new CdpError(
+      "Opera Neon: user is not signed in",
+      "BROWSER_ERROR",
+      [
+        "Open Opera Neon and sign in to your Opera account",
+        "AI commands (chat, invoke-do, make, research) require Opera Neon with an active sign-in",
+        "Run `opera-cli setup` to configure the Opera Neon executable path",
+      ],
+    );
   }
   // Try to parse JSON error
   try {

@@ -20,6 +20,7 @@ vi.mock("../src/client.js", () => ({
   callTool,
   ensureBridge: vi.fn(),
   getSessionSnapshotIfRunning: vi.fn(),
+  loadConfig: vi.fn(),
   stopBridge: vi.fn(),
 }));
 
