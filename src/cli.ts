@@ -14,6 +14,7 @@ import {
   getLogFile,
   getSessionSnapshotIfRunning,
   loadConfig,
+  parseConfigValue,
   stopBridge,
 } from "./client.js";
 import { readStdin, runScript } from "./run.js";
@@ -1570,22 +1571,24 @@ async function handleHeap(args: string[]): Promise<string> {
  */
 function defaultNeonProfileDir(neonPath: string | undefined): string | null {
   const home = homedir();
+  let candidate: string;
   if (process.platform === "darwin") {
     const isDeveloper =
       !neonPath || neonPath.includes("Opera Neon Developer.app");
     const bundle = isDeveloper
       ? "com.operasoftware.OperaNeonDeveloper"
       : "com.operasoftware.OperaNeon";
-    return `${home}/Library/Application Support/${bundle}/Default/Default`;
-  }
-  if (process.platform === "win32") {
+    candidate = `${home}/Library/Application Support/${bundle}/Default`;
+  } else if (process.platform === "win32") {
     const appData = process.env.APPDATA ?? `${home}\\AppData\\Roaming`;
     const isDeveloper = !neonPath || neonPath.includes("Developer");
-    return isDeveloper
+    candidate = isDeveloper
       ? `${appData}\\Opera Software\\Opera Neon Developer`
       : `${appData}\\Opera Software\\Opera Neon`;
+  } else {
+    return null;
   }
-  return null;
+  return existsSync(candidate) ? candidate : null;
 }
 
 function neonCandidatePaths(): string[] {
@@ -1661,7 +1664,7 @@ async function handleSetup(_args: string[]): Promise<string> {
       if (!t || t.startsWith("#")) continue;
       const eq = t.indexOf("=");
       if (eq === -1) continue;
-      existing[t.slice(0, eq).trim()] = t.slice(eq + 1).trim();
+      existing[t.slice(0, eq).trim()] = parseConfigValue(t.slice(eq + 1).trim());
     }
   }
 
@@ -1675,19 +1678,45 @@ async function handleSetup(_args: string[]): Promise<string> {
     process.stdout.write("opera-cli setup\n\n");
 
     // 1. Browser executable path
-    const detectedNeon = neonCandidatePaths().find((p) => existsSync(p));
+    const detectedNeons = neonCandidatePaths().filter((p) => existsSync(p));
     const detectedOpera = operaCandidatePaths().find((p) => existsSync(p));
     const currentExec = existing["OPERA_CLI_EXECUTABLE_PATH"];
 
-    if (detectedNeon && !currentExec) {
-      const name = browserDisplayName(detectedNeon);
-      process.stdout.write(`Detected ${name} at:\n  ${detectedNeon}\nUsing it as the browser.\n`);
-      config["OPERA_CLI_EXECUTABLE_PATH"] = detectedNeon;
+    if (detectedNeons.length > 0) {
+      // Always show the full list so the user can switch between versions.
+      // Mark whichever entry matches the current config (if any).
+      const currentIdx = detectedNeons.indexOf(currentExec ?? "");
+      process.stdout.write("Opera Neon installations found:\n");
+      detectedNeons.forEach((p, i) => {
+        const marker = i === currentIdx ? " (current)" : "";
+        process.stdout.write(
+          `  [${i + 1}] ${browserDisplayName(p)}${marker}\n      ${p}\n`,
+        );
+      });
+      const defaultIdx = currentIdx >= 0 ? currentIdx + 1 : 1;
+      const ans = (
+        await ask(
+          `Select [1-${detectedNeons.length}], enter a custom path, or "clear" to unset [${defaultIdx}]: `,
+        )
+      ).trim();
+      if (ans.toLowerCase() === "clear") {
+        delete config["OPERA_CLI_EXECUTABLE_PATH"];
+      } else if (!ans) {
+        config["OPERA_CLI_EXECUTABLE_PATH"] = detectedNeons[defaultIdx - 1]!;
+      } else {
+        const idx = parseInt(ans, 10);
+        if (Number.isFinite(idx) && idx >= 1 && idx <= detectedNeons.length) {
+          config["OPERA_CLI_EXECUTABLE_PATH"] = detectedNeons[idx - 1]!;
+        } else {
+          config["OPERA_CLI_EXECUTABLE_PATH"] = ans; // custom path
+        }
+      }
     } else if (currentExec) {
+      // No auto-detected Neons but something is already configured.
       process.stdout.write(`Browser binary: ${currentExec}\n`);
       const ans = (
         await ask(
-          'Change it? (enter new path, "clear" to remove, or press Enter to keep): ',
+          'Enter a new path, "clear" to remove, or press Enter to keep: ',
         )
       ).trim();
       if (ans.toLowerCase() === "clear") {
@@ -1696,8 +1725,9 @@ async function handleSetup(_args: string[]): Promise<string> {
         config["OPERA_CLI_EXECUTABLE_PATH"] = ans;
       }
     } else {
+      // Nothing detected or configured.
       process.stdout.write(
-        "Opera Neon not found. Install it from https://www.operaneon.com to enable AI commands (chat, invoke-do, make, research).\n",
+        "Opera Neon not found. Install it from https://www.operaneon.com to enable AI commands.\n",
       );
       if (detectedOpera) {
         const operaName = browserDisplayName(detectedOpera);
@@ -1727,24 +1757,39 @@ async function handleSetup(_args: string[]): Promise<string> {
       config["OPERA_CLI_HEADED"] = "1";
     }
 
-    // 3. Persistent profile directory (defaults to the detected Neon profile
-    // so opera-cli inherits an already-signed-in session)
+    // 3. Persistent profile directory
     const currentProfile = existing["OPERA_CLI_USER_DATA_DIR"] ?? "";
-    const defaultProfile =
-      currentProfile ||
-      defaultNeonProfileDir(config["OPERA_CLI_EXECUTABLE_PATH"]) ||
-      join(stateDir, "profile");
-    const profileAns = (
-      await ask(
-        `Persistent profile directory (blank to use default, "skip" to omit):\n  [${defaultProfile}]: `,
-      )
-    ).trim();
+    const detectedProfile = defaultNeonProfileDir(
+      config["OPERA_CLI_EXECUTABLE_PATH"],
+    );
+
+    let profilePrompt: string;
+    let profileDefault: string;
+    let profileListShown = false;
+
+    if (currentProfile && detectedProfile && currentProfile !== detectedProfile) {
+      profileListShown = true;
+      process.stdout.write("Persistent profile directory:\n");
+      process.stdout.write(`  [1] ${currentProfile}  (current)\n`);
+      process.stdout.write(`  [2] ${detectedProfile}  (detected)\n`);
+      profilePrompt = 'Select [1/2], enter a custom path, or "skip" to omit [1]: ';
+      profileDefault = currentProfile;
+    } else {
+      profileDefault = currentProfile || detectedProfile || join(stateDir, "profile");
+      profilePrompt = `Persistent profile directory (blank to use default, "skip" to omit):\n  [${profileDefault}]: `;
+    }
+
+    const profileAns = (await ask(profilePrompt)).trim();
     if (profileAns.toLowerCase() === "skip") {
       delete config["OPERA_CLI_USER_DATA_DIR"];
+    } else if (profileListShown && profileAns === "2" && detectedProfile) {
+      config["OPERA_CLI_USER_DATA_DIR"] = detectedProfile;
+    } else if (profileListShown && (profileAns === "1" || !profileAns)) {
+      config["OPERA_CLI_USER_DATA_DIR"] = currentProfile;
     } else if (profileAns) {
       config["OPERA_CLI_USER_DATA_DIR"] = profileAns;
     } else {
-      config["OPERA_CLI_USER_DATA_DIR"] = defaultProfile;
+      config["OPERA_CLI_USER_DATA_DIR"] = profileDefault;
     }
   } finally {
     rl.close();
@@ -1756,7 +1801,7 @@ async function handleSetup(_args: string[]): Promise<string> {
     "# opera-cli configuration — auto-loaded on every run",
     "# Values here are used as defaults when the env var is not already set.",
     "",
-    ...Object.entries(config).map(([k, v]) => `${k}=${v}`),
+    ...Object.entries(config).map(([k, v]) => `${k}="${v.replace(/"/g, '\\"')}"`),
   ];
   writeFileSync(configFile, lines.join("\n") + "\n");
 

@@ -28,6 +28,16 @@ export function getConfigFile(): string {
   return CONFIG_FILE;
 }
 
+export function parseConfigValue(raw: string): string {
+  if (
+    (raw.startsWith('"') && raw.endsWith('"')) ||
+    (raw.startsWith("'") && raw.endsWith("'"))
+  ) {
+    return raw.slice(1, -1).replace(/\\"/g, '"').replace(/\\'/g, "'");
+  }
+  return raw;
+}
+
 /**
  * Load ~/.opera-cli/config and apply KEY=VALUE pairs as env var defaults.
  * Only sets a var if it is not already set in the environment.
@@ -42,7 +52,7 @@ export function loadConfig(): void {
       const eq = trimmed.indexOf("=");
       if (eq === -1) continue;
       const key = trimmed.slice(0, eq).trim();
-      const value = trimmed.slice(eq + 1).trim();
+      const value = parseConfigValue(trimmed.slice(eq + 1).trim());
       if (key && !(key in process.env)) {
         process.env[key] = value;
       }
