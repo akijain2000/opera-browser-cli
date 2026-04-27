@@ -1578,7 +1578,7 @@ function defaultNeonProfileDir(neonPath: string | undefined): string | null {
     const bundle = isDeveloper
       ? "com.operasoftware.OperaNeonDeveloper"
       : "com.operasoftware.OperaNeon";
-    candidate = `${home}/Library/Application Support/${bundle}/Default`;
+    candidate = `${home}/Library/Application Support/${bundle}`;
   } else if (process.platform === "win32") {
     const appData = process.env.APPDATA ?? `${home}\\AppData\\Roaming`;
     const isDeveloper = !neonPath || neonPath.includes("Developer");
