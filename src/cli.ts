@@ -1095,12 +1095,28 @@ async function handleScreenshot(args: string[]): Promise<string> {
     ]);
   }
 
+  const dir = dirname(parsed.filePath);
+  if (!existsSync(dir)) {
+    throw new CdpError(`Directory does not exist: ${dir}`, "VALIDATION_ERROR", [
+      "Create the directory first, or use an existing path",
+    ]);
+  }
+
   const toolArgs: Record<string, unknown> = { filePath: parsed.filePath };
   if (parsed.uid) toolArgs.uid = parsed.uid;
   if (parsed.fullPage) toolArgs.fullPage = true;
   if (parsed.format) toolArgs.format = parsed.format;
 
   await callTool("take_screenshot", toolArgs);
+
+  if (!existsSync(parsed.filePath)) {
+    throw new CdpError(
+      `Screenshot was not saved to: ${parsed.filePath}`,
+      "BROWSER_ERROR",
+      ["Check that the path is writable and the format is supported"],
+    );
+  }
+
   return formatScreenshotOutput(parsed.filePath);
 }
 
@@ -1214,11 +1230,13 @@ async function handleWait(args: string[]): Promise<string> {
 /** Wrap plain JS expressions for MCP evaluate_script, but pass functions through unchanged. */
 export function wrapJsExpression(js: string): string {
   const trimmed = js.trim();
-  if (
+  const isFunction =
     /^(async\s*)?(\(.*?\)\s*=>|[a-zA-Z_$][a-zA-Z0-9_$]*\s*=>|function[\s*(])/.test(
       trimmed,
-    )
-  ) {
+    );
+  // IIFEs look like functions to the regex but are call expressions — wrap them.
+  const isIIFE = isFunction && /\)\s*\(.*\)\s*$/.test(trimmed);
+  if (isFunction && !isIIFE) {
     return trimmed;
   }
   return `() => (${trimmed})`;
@@ -1380,6 +1398,13 @@ async function handleResize(args: string[]): Promise<string> {
     throw new CdpError("Width and height must be numbers", "VALIDATION_ERROR", [
       "Run `opera-cli resize 1280 720` to resize the viewport",
     ]);
+  }
+  if (width < 1 || height < 1 || width > 10000 || height > 10000) {
+    throw new CdpError(
+      "Width and height must be between 1 and 10000",
+      "VALIDATION_ERROR",
+      ["Run `opera-cli resize 1280 720` to resize the viewport"],
+    );
   }
   await callTool("resize_page", { width, height });
   return encode({ resized: { width, height } });
