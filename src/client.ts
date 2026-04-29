@@ -337,6 +337,12 @@ export function mapErrorMessage(message: string): CdpError {
       "Run `opera-cli snapshot` to see current page state",
     ]);
   }
+  if (message.includes("selected page has been closed")) {
+    return new CdpError(message, "PAGE_CLOSED", [
+      "Run `opera-cli pages` to see open pages",
+      "Run `opera-cli selectpage <id>` to switch to an open page",
+    ]);
+  }
   if (
     message.includes("User is not signed in") ||
     (message.includes("Opera.dispatchAction") &&
