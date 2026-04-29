@@ -13,6 +13,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
+import type { TransportSendOptions } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { LoggingMessageNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import {
   createServer,
@@ -182,26 +184,49 @@ async function handleCallRequest(
   client: BridgeClient,
   req: IncomingMessage,
   res: ServerResponse,
+  captureNextId?: () => Promise<string>,
 ): Promise<void> {
   const body = await readRequestBody(req);
   const payload = parseBridgeCallPayload(body);
   const isStreamable = OPERA_AI_TOOLS.has(payload.name);
   const options = isStreamable ? { timeout: OPERA_AI_TIMEOUT } : undefined;
 
-  const previousListener = onLogMessage;
-  if (isStreamable) {
-    onLogMessage = (data) => {
-      const text = typeof data === "string" ? data : JSON.stringify(data);
-      res.write(JSON.stringify({ log: text }) + "\n");
-    };
+  let mcpRequestId: string | undefined;
+  if (isStreamable && captureNextId) {
+    // Register the capture BEFORE calling callTool so the synchronous
+    // transport.send fires into our queue before we await the result.
+    const idCapture = captureNextId();
+    const callPromise = client.callTool(
+      { name: payload.name, arguments: payload.args },
+      undefined,
+      options,
+    );
+    // Suppress unhandled-rejection if idCapture rejects (e.g. transport closes
+    // before transport.send fires in a future SDK version). The rejection will
+    // propagate through the `await idCapture` below and close the response.
+    callPromise.catch(() => {});
+    mcpRequestId = await idCapture; // resolves as soon as transport.send fires
+    requestLoggers.set(mcpRequestId, (chunk) => {
+      res.write(JSON.stringify({ log: chunk }) + "\n");
+    });
+    try {
+      const result = await callPromise;
+      const text = extractToolText(getToolContent(result));
+      res.statusCode = 200;
+      res.end(JSON.stringify({ result: text }));
+    } catch (error) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: getErrorMessage(error) }));
+    } finally {
+      requestLoggers.delete(mcpRequestId);
+    }
+    return;
   }
 
+  // Non-streaming path (unchanged).
   try {
     const result = await client.callTool(
-      {
-        name: payload.name,
-        arguments: payload.args,
-      },
+      { name: payload.name, arguments: payload.args },
       undefined,
       options,
     );
@@ -211,8 +236,6 @@ async function handleCallRequest(
   } catch (error) {
     res.statusCode = 500;
     res.end(JSON.stringify({ error: getErrorMessage(error) }));
-  } finally {
-    onLogMessage = previousListener;
   }
 }
 
@@ -220,6 +243,7 @@ export async function handleBridgeRequest(
   client: BridgeClient,
   req: IncomingMessage,
   res: ServerResponse,
+  captureNextId?: () => Promise<string>,
 ): Promise<void> {
   res.setHeader("Content-Type", "application/json");
 
@@ -239,7 +263,7 @@ export async function handleBridgeRequest(
     }
 
     if (req.method === "POST" && req.url === "/call") {
-      await handleCallRequest(client, req, res);
+      await handleCallRequest(client, req, res, captureNextId);
       return;
     }
   } catch (error) {
@@ -250,9 +274,12 @@ export async function handleBridgeRequest(
   writeJson(res, 404, { error: "not found" });
 }
 
-export function createBridgeServer(client: BridgeClient): Server {
+export function createBridgeServer(
+  client: BridgeClient,
+  captureNextId?: () => Promise<string>,
+): Server {
   return createServer((req, res) => {
-    void handleBridgeRequest(client, req, res);
+    void handleBridgeRequest(client, req, res, captureNextId);
   });
 }
 
@@ -320,14 +347,73 @@ function createTransport(): StdioClientTransport {
   return new StdioClientTransport({ command: bin, args });
 }
 
-let onLogMessage: ((data: unknown) => void) | undefined;
+const requestLoggers = new Map<string, (chunk: string) => void>();
+
+type IdResolver = { resolve: (id: string) => void; reject: (err: Error) => void };
+
+/**
+ * Wraps transport.send to intercept outgoing JSON-RPC request IDs so each
+ * streaming callTool call can register its own log writer before the first
+ * notification arrives.
+ *
+ * INVARIANT: The MCP SDK's Client.request() calls transport.send() synchronously
+ * inside its Promise constructor (see @modelcontextprotocol/sdk shared/protocol.js).
+ * This means callTool() triggers transport.send before yielding, allowing us to
+ * capture the ID before any concurrent handler can interleave.
+ * Verify this invariant when upgrading @modelcontextprotocol/sdk.
+ */
+export function wrapTransportForIdCapture(
+  transport: StdioClientTransport,
+): () => Promise<string> {
+  const queue: IdResolver[] = [];
+  // Cast origSend to the full Transport.send signature so we can forward the
+  // options argument even though StdioClientTransport currently ignores it.
+  const origSend = transport.send.bind(transport) as (
+    msg: JSONRPCMessage,
+    options?: TransportSendOptions,
+  ) => Promise<void>;
+
+  // Forward send — preserve the options parameter so future SDK versions that
+  // use TransportSendOptions over stdio are not silently broken.
+  transport.send = (async (msg: JSONRPCMessage, options?: TransportSendOptions) => {
+    if ("id" in msg && "method" in msg && queue.length > 0) {
+      queue.shift()!.resolve(String((msg as { id: unknown }).id));
+    }
+    return origSend(msg, options);
+  }) as unknown as StdioClientTransport["send"];
+
+  // Latent safety net: if a future SDK version makes transport.send async,
+  // reject any queued capture so callers do not hang. In the current SDK the
+  // queue is always empty by the time onclose can fire (transport.send is
+  // called synchronously before the first await in Client.request). The primary
+  // protection against a dead-transport hang is the runBridge onclose handler
+  // that calls shutdown(); this drain is a belt-and-suspenders fallback.
+  const origOnClose = transport.onclose;
+  transport.onclose = () => {
+    const err = new Error("MCP transport disconnected");
+    while (queue.length > 0) queue.shift()!.reject(err);
+    origOnClose?.();
+  };
+
+  return () => new Promise<string>((resolve, reject) => queue.push({ resolve, reject }));
+}
 
 function createBridgeClient(): Client {
   const client = new Client({ name: "opera-cli-bridge", version: "1.0.0" });
   client.setNotificationHandler(
     LoggingMessageNotificationSchema,
     (notification) => {
-      onLogMessage?.(notification.params.data);
+      // opera-devtools-mcp sets `logger` to String(extra.requestId) so the bridge
+      // can route the chunk to the correct HTTP response. `data` stays a plain
+      // string so non-bridge MCP hosts (Claude Desktop, VS Code, etc.) render it
+      // as readable text without any change.
+      const { data, logger } = notification.params;
+      if (logger && requestLoggers.has(logger)) {
+        const chunk = typeof data === "string" ? data : JSON.stringify(data);
+        requestLoggers.get(logger)!(chunk);
+      }
+      // No matching logger: notification is from a non-Opera tool or an older
+      // server version — silently ignore.
     },
   );
   return client;
@@ -347,11 +433,12 @@ async function closeServer(server: Server): Promise<void> {
 
 export async function runBridge(port = DEFAULT_PORT): Promise<void> {
   const transport = createTransport();
+  const captureNextId = wrapTransportForIdCapture(transport);
   const client = createBridgeClient();
   await client.connect(transport);
   logBridgeMessage("Connected to opera-devtools-mcp");
 
-  const server = createBridgeServer(client);
+  const server = createBridgeServer(client, captureNextId);
   server.listen(port, "127.0.0.1", () => {
     writePidFile(port);
     logBridgeMessage(`Listening on http://127.0.0.1:${port}`);
@@ -367,6 +454,17 @@ export async function runBridge(port = DEFAULT_PORT): Promise<void> {
     await client.close();
     await transport.close();
     process.exit(0);
+  };
+
+  // If opera-devtools-mcp exits (transport closes), shut the bridge down too.
+  // Without this, the bridge would keep accepting HTTP requests and hang on any
+  // streaming call: captureNextId() queues a resolver, callTool() early-rejects
+  // without calling transport.send, and `await idCapture` never resolves.
+  // Chain after the drain handler already installed by wrapTransportForIdCapture.
+  const afterDrain = transport.onclose;
+  transport.onclose = () => {
+    afterDrain?.();
+    void shutdown();
   };
 
   // Kill our entire process group on exit so opera-devtools-mcp children

@@ -1,5 +1,18 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { buildTransportArgs, extractToolText, getErrorMessage, isBridgeClientConnected, parseBridgeCallPayload, resolveBridgeScript } from "../src/bridge.js";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
+import {
+  buildTransportArgs,
+  extractToolText,
+  getErrorMessage,
+  handleBridgeRequest,
+  isBridgeClientConnected,
+  parseBridgeCallPayload,
+  resolveBridgeScript,
+  wrapTransportForIdCapture,
+  type BridgeClient,
+} from "../src/bridge.js";
 
 describe("extractToolText", () => {
   it("joins text blocks and ignores non-text content", () => {
@@ -182,5 +195,193 @@ describe("bridge health", () => {
     });
 
     expect(healthy).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Helpers for handleBridgeRequest / wrapTransportForIdCapture tests
+// ---------------------------------------------------------------------------
+
+function makeMockTransport() {
+  const transport = {
+    send: async (_msg: JSONRPCMessage) => {},
+    onclose: undefined as (() => void) | undefined,
+  } as unknown as StdioClientTransport;
+  return transport;
+}
+
+function makeMockRequest(method: string, url: string, body = ""): IncomingMessage {
+  return {
+    method,
+    url,
+    [Symbol.asyncIterator]: async function* () { yield body; },
+  } as unknown as IncomingMessage;
+}
+
+function makeMockResponse() {
+  const written: string[] = [];
+  let endPayload = "";
+  const res = {
+    statusCode: 200,
+    setHeader: () => {},
+    write: (data: string) => { written.push(data); },
+    end: (data: string) => { endPayload = data; },
+  } as unknown as ServerResponse;
+  return {
+    res,
+    written,
+    get endPayload() { return endPayload; },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// wrapTransportForIdCapture
+// ---------------------------------------------------------------------------
+
+describe("wrapTransportForIdCapture", () => {
+  it("resolves with the request ID from the first outgoing JSON-RPC request", async () => {
+    const transport = makeMockTransport();
+    const captureNextId = wrapTransportForIdCapture(transport);
+
+    const idPromise = captureNextId();
+    await transport.send({ jsonrpc: "2.0", id: "42", method: "tools/call", params: {} });
+
+    expect(await idPromise).toBe("42");
+  });
+
+  it("assigns IDs in FIFO order across concurrent captures", async () => {
+    const transport = makeMockTransport();
+    const captureNextId = wrapTransportForIdCapture(transport);
+
+    const idA = captureNextId();
+    const idB = captureNextId();
+
+    await transport.send({ jsonrpc: "2.0", id: "1", method: "tools/call", params: {} });
+    await transport.send({ jsonrpc: "2.0", id: "2", method: "tools/call", params: {} });
+
+    expect(await idA).toBe("1");
+    expect(await idB).toBe("2");
+  });
+
+  it("rejects pending captures when the transport disconnects", async () => {
+    const transport = makeMockTransport();
+    const captureNextId = wrapTransportForIdCapture(transport);
+
+    const idPromise = captureNextId();
+    transport.onclose?.();
+
+    await expect(idPromise).rejects.toThrow("MCP transport disconnected");
+  });
+
+  it("ignores response messages (no method) and pure notifications (no id)", async () => {
+    const transport = makeMockTransport();
+    const captureNextId = wrapTransportForIdCapture(transport);
+
+    const idPromise = captureNextId();
+
+    // Response message — has id but no method
+    await transport.send({ jsonrpc: "2.0", id: "99", result: {} });
+    // Notification — has method but no id
+    await transport.send({ jsonrpc: "2.0", method: "notifications/message", params: {} });
+    // Actual request — has both id and method
+    await transport.send({ jsonrpc: "2.0", id: "7", method: "tools/call", params: {} });
+
+    expect(await idPromise).toBe("7");
+  });
+
+  it("still forwards all messages to the original send implementation", async () => {
+    let sentMessages: JSONRPCMessage[] = [];
+    const transport = {
+      send: async (msg: JSONRPCMessage) => { sentMessages.push(msg); },
+      onclose: undefined as (() => void) | undefined,
+    } as unknown as StdioClientTransport;
+
+    const captureNextId = wrapTransportForIdCapture(transport);
+    const idPromise = captureNextId();
+
+    const msg: JSONRPCMessage = { jsonrpc: "2.0", id: "5", method: "tools/call", params: {} };
+    await transport.send(msg);
+    await idPromise;
+
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]).toBe(msg);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleBridgeRequest — streaming path
+// ---------------------------------------------------------------------------
+
+describe("handleBridgeRequest streaming", () => {
+  it("writes the tool result to the response for a streaming tool call", async () => {
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => ({ content: [{ type: "text", text: "streamed result" }] }),
+      close: async () => {},
+    };
+
+    const captureNextId = () => Promise.resolve("req-1");
+    const req = makeMockRequest("POST", "/call", JSON.stringify({ name: "opera_do", args: { prompt: "hello" } }));
+    const mock = makeMockResponse();
+
+    await handleBridgeRequest(client, req, mock.res, captureNextId);
+
+    expect(JSON.parse(mock.endPayload)).toEqual({ result: "streamed result" });
+  });
+
+  it("returns a 500 when callTool throws during a streaming call", async () => {
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => { throw new Error("browser crashed"); },
+      close: async () => {},
+    };
+
+    const captureNextId = () => Promise.resolve("req-err");
+    const req = makeMockRequest("POST", "/call", JSON.stringify({ name: "opera_do", args: { prompt: "fail" } }));
+    const mock = makeMockResponse();
+
+    await handleBridgeRequest(client, req, mock.res, captureNextId);
+
+    expect(mock.res.statusCode).toBe(500);
+    expect(JSON.parse(mock.endPayload)).toEqual({ error: "browser crashed" });
+  });
+
+  it("routes concurrent streaming calls to their respective responses", async () => {
+    let resolveA!: (v: unknown) => void;
+    let resolveB!: (v: unknown) => void;
+
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async ({ name }) => {
+        if (name === "opera_do") {
+          await new Promise(r => { resolveA = r; });
+          return { content: [{ type: "text", text: "result-A" }] };
+        }
+        await new Promise(r => { resolveB = r; });
+        return { content: [{ type: "text", text: "result-B" }] };
+      },
+      close: async () => {},
+    };
+
+    const idQueue = ["id-A", "id-B"];
+    const captureNextId = () => Promise.resolve(idQueue.shift()!);
+
+    const reqA = makeMockRequest("POST", "/call", JSON.stringify({ name: "opera_do", args: { prompt: "A" } }));
+    const reqB = makeMockRequest("POST", "/call", JSON.stringify({ name: "opera_research", args: { prompt: "B" } }));
+    const mockA = makeMockResponse();
+    const mockB = makeMockResponse();
+
+    const promiseA = handleBridgeRequest(client, reqA, mockA.res, captureNextId);
+    const promiseB = handleBridgeRequest(client, reqB, mockB.res, captureNextId);
+
+    // Flush all pending microtasks so both callTool calls have started and
+    // resolveA / resolveB are guaranteed to be set before we call them.
+    await new Promise(r => setTimeout(r, 0));
+    resolveA(undefined);
+    resolveB(undefined);
+    await Promise.all([promiseA, promiseB]);
+
+    expect(JSON.parse(mockA.endPayload)).toEqual({ result: "result-A" });
+    expect(JSON.parse(mockB.endPayload)).toEqual({ result: "result-B" });
   });
 });
