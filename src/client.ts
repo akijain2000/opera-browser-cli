@@ -66,6 +66,7 @@ export type ErrorCode =
   | "BRIDGE_NOT_READY"
   | "REF_NOT_FOUND"
   | "TIMEOUT"
+  | "PAGE_CLOSED"
   | "BROWSER_ERROR"
   | "VALIDATION_ERROR"
   | "UNKNOWN";

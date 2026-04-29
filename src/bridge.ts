@@ -189,24 +189,33 @@ async function handleCallRequest(
   const body = await readRequestBody(req);
   const payload = parseBridgeCallPayload(body);
   const isStreamable = OPERA_AI_TOOLS.has(payload.name);
-  const options = isStreamable ? { timeout: OPERA_AI_TIMEOUT } : undefined;
 
   let mcpRequestId: string | undefined;
   if (isStreamable && captureNextId) {
+    const controller = new AbortController();
+    let timer = setTimeout(() => controller.abort(), OPERA_AI_TIMEOUT);
+
     // Register the capture BEFORE calling callTool so the synchronous
     // transport.send fires into our queue before we await the result.
     const idCapture = captureNextId();
     const callPromise = client.callTool(
       { name: payload.name, arguments: payload.args },
       undefined,
-      options,
+      { signal: controller.signal, timeout: OPERA_AI_TIMEOUT * 2 },
     );
     // Suppress unhandled-rejection if idCapture rejects (e.g. transport closes
     // before transport.send fires in a future SDK version). The rejection will
     // propagate through the `await idCapture` below and close the response.
     callPromise.catch(() => {});
-    mcpRequestId = await idCapture; // resolves as soon as transport.send fires
+    try {
+      mcpRequestId = await idCapture; // resolves as soon as transport.send fires
+    } catch (error) {
+      clearTimeout(timer);
+      throw error;
+    }
     requestLoggers.set(mcpRequestId, (chunk) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => controller.abort(), OPERA_AI_TIMEOUT);
       res.write(JSON.stringify({ log: chunk }) + "\n");
     });
     try {
@@ -218,6 +227,7 @@ async function handleCallRequest(
       res.statusCode = 500;
       res.end(JSON.stringify({ error: getErrorMessage(error) }));
     } finally {
+      clearTimeout(timer);
       requestLoggers.delete(mcpRequestId);
     }
     return;
@@ -228,7 +238,6 @@ async function handleCallRequest(
     const result = await client.callTool(
       { name: payload.name, arguments: payload.args },
       undefined,
-      options,
     );
     const text = extractToolText(getToolContent(result));
     res.statusCode = 200;
