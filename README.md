@@ -3,7 +3,7 @@
 <h3 align="center">The most agent-ergonomic browser automation</h3>
 
 `opera-cli` is a fork of [chrome-devtools-axi](https://github.com/kunchenguid/chrome-devtools-axi).
-It wraps opera-devtool (a fork of [opera-devtools-mcp](https://www.npmjs.com/package/opera-devtools-mcp)) with an [AXI](https://axi.md)-compliant CLI.
+It wraps [opera-devtools-mcp](https://github.com/operasoftware/opera-devtools-mcp) with an [AXI](https://axi.md)-compliant CLI.
 
 - **Token-efficient** — TOON-encoded output cuts token usage ~40% vs raw JSON
 - **Combined operations** — one command navigates, captures, and suggests next steps
@@ -30,66 +30,38 @@ snapshot:
 
 ## Install
 
-### From archive (no npm publish required)
+Prerequisites: **Node.js >= 20**, **Opera** browser ([Opera Neon](https://www.operaneon.com) recommended for AI features), **[opera-devtools-mcp](https://github.com/operasoftware/opera-devtools-mcp)**.
 
-Prerequisites: **Node.js >= 20**, **Chrome or Opera** browser.
+### From source
 
-```sh
-tar xzf opera-cli-0.1.15.tar.gz
-cd opera-cli-0.1.15
-./install.sh
-```
-
-This installs everything to `~/.opera-cli/`, creates a symlink at
-`~/.local/bin/opera-cli`, and copies the Claude Code skill to
-`~/.claude/skills/opera-cli/SKILL.md`. The unpacked archive can be deleted
-after installation.
-
-Pass a custom bin directory to symlink elsewhere:
+**1. Build and link `opera-devtools-mcp`:**
 
 ```sh
-./install.sh /usr/local/bin
+git clone https://github.com/operasoftware/opera-devtools-mcp
+cd opera-devtools-mcp
+npm install && npm run build && npm link
 ```
 
-Make sure the target directory is in your `PATH`:
+**2. Build and link `opera-cli`:**
 
 ```sh
-# Add to your shell profile (~/.zshrc, ~/.bashrc, etc.) if not already there
-export PATH="$HOME/.local/bin:$PATH"
+# in this repo
+npm install && npm run build && npm link
 ```
 
-Verify the installation:
+**3. Run first-time setup:**
+
+```sh
+opera-cli setup
+```
+
+This detects Opera installations, lets you pick one, saves configuration to `~/.opera-cli/config`, and installs the Claude Code skill to `~/.claude/skills/opera-cli/SKILL.md`.
+
+Verify:
 
 ```sh
 opera-cli --version
 opera-cli open https://example.com
-```
-
-To uninstall:
-
-```sh
-rm -rf ~/.opera-cli ~/.local/bin/opera-cli ~/.claude/skills/opera-cli
-```
-
-#### Building the archive yourself
-
-From the monorepo root (requires both `opera-cli/` and `opera-devtools-mcp/`):
-
-```sh
-cd opera-cli
-npm install
-(cd ../opera-devtools-mcp && npm install)
-bash scripts/dist.sh
-```
-
-This produces `opera-cli-<version>.tar.gz` in the `opera-cli/` directory.
-
-### Via npx
-
-**Tell your agent:**
-
-```
-Execute `npx -y opera-cli` to get browser automation tools.
 ```
 
 ### Usage examples
@@ -219,6 +191,14 @@ Requires Opera Neon with an active Opera account.
 
 `research` accepts `--type local` (default), `--type one-minute`, or `--type deep`.
 
+### Configuration
+
+| Command  | Description                                      |
+| -------- | ------------------------------------------------ |
+| `setup`  | Interactive first-time setup (browser path, etc) |
+| `doctor` | Check configuration and environment              |
+| `logs`   | Show bridge server logs                          |
+
 ### Bridge
 
 | Command | Description             |
@@ -314,7 +294,7 @@ npm link
 export OPERA_CLI_EXECUTABLE_PATH="/Applications/Opera Neon Developer.app/Contents/MacOS/Opera"
 ```
 
-**Tip:** Set `OPERA_CLI_MCP_BIN` to use the locally linked `opera-devtools-mcp` instead of downloading from npm:
+**Tip:** Set `OPERA_CLI_MCP_BIN` to point to the locally linked `opera-devtools-mcp`:
 
 ```sh
 export OPERA_CLI_MCP_BIN=opera-devtools-mcp
@@ -325,10 +305,6 @@ export OPERA_CLI_MCP_BIN=opera-devtools-mcp
 ```sh
 export OPERA_CLI_HEADED=1
 ```
-
-**4. Load the skill into your agent:**
-
-Place `SKILL.md` (or the compact skill variant) where Claude or another agent can load it. Once loaded, the agent has access to the `opera-cli` skill and can use it directly.
 
 ## Development
 

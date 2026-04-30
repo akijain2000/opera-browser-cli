@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
@@ -1831,6 +1831,20 @@ async function handleSetup(_args: string[]): Promise<string> {
   writeFileSync(configFile, lines.join("\n") + "\n");
 
   process.stdout.write(`\nSaved to ${configFile}\n`);
+
+  // Install SKILL.md as the Claude Code skill
+  const here = dirname(fileURLToPath(import.meta.url));
+  const skillSrc = [join(here, "..", "SKILL.md"), join(here, "..", "..", "SKILL.md")].find(
+    (p) => existsSync(p),
+  );
+  const skillDst = join(homedir(), ".claude", "skills", "opera-cli", "SKILL.md");
+  if (skillSrc) {
+    mkdirSync(dirname(skillDst), { recursive: true });
+    copyFileSync(skillSrc, skillDst);
+    process.stdout.write(`Installed Claude skill -> ${skillDst}\n`);
+  } else {
+    process.stdout.write("SKILL.md not found — skipping Claude skill install\n");
+  }
 
   return renderOutput([
     encode({ config: configFile, settings: config }),
