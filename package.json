@@ -1,0 +1,54 @@
+{
+  "name": "opera-browser-cli",
+  "version": "0.1.27",
+  "description": "AXI-compliant opera-devtools-mcp wrapper — combined operations, TOON output, contextual suggestions",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operasoftware/opera-browser-cli.git"
+  },
+  "keywords": [
+    "chrome",
+    "devtools",
+    "browser",
+    "cli",
+    "agent",
+    "axi",
+    "toon",
+    "mcp"
+  ],
+  "bin": {
+    "opera-browser-cli": "dist/bin/opera-browser-cli.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md",
+    "SKILL.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x dist/bin/opera-browser-cli.js",
+    "dev": "tsx bin/opera-cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@toon-format/toon": "^2.1.0",
+    "axi-sdk-js": "^0.1.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
