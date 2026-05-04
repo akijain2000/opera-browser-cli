@@ -158,19 +158,19 @@ describe("buildTransportArgs", () => {
   });
 
   it("uses --executablePath when OPERA_CLI_EXECUTABLE_PATH is set", () => {
-    process.env.OPERA_CLI_EXECUTABLE_PATH = "/Applications/Opera Neon Developer.app/Contents/MacOS/Opera";
+    process.env.OPERA_CLI_EXECUTABLE_PATH = "/Applications/Opera Neon.app/Contents/MacOS/Opera";
     const args = buildTransportArgs();
-    expect(args).toContain("--executablePath=/Applications/Opera Neon Developer.app/Contents/MacOS/Opera");
+    expect(args).toContain("--executablePath=/Applications/Opera Neon.app/Contents/MacOS/Opera");
     expect(args).toContain("--isolated");
     expect(args).toContain("--headless");
   });
 
   it("omits --executablePath when OPERA_CLI_BROWSER_URL is also set", () => {
     process.env.OPERA_CLI_BROWSER_URL = "http://127.0.0.1:9222";
-    process.env.OPERA_CLI_EXECUTABLE_PATH = "/Applications/Opera Neon Developer.app/Contents/MacOS/Opera";
+    process.env.OPERA_CLI_EXECUTABLE_PATH = "/Applications/Opera Neon.app/Contents/MacOS/Opera";
     const args = buildTransportArgs();
     expect(args).toContain("--browserUrl=http://127.0.0.1:9222");
-    expect(args).not.toContain("--executablePath=/Applications/Opera Neon Developer.app/Contents/MacOS/Opera");
+    expect(args).not.toContain("--executablePath=/Applications/Opera Neon.app/Contents/MacOS/Opera");
   });
 });
 

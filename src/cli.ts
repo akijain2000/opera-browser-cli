@@ -74,7 +74,7 @@ environment:
 opera ai:
   chat, invoke-do, make, and research require Opera Neon with an active sign-in.
   Run \`opera-browser-cli setup\` to configure the Opera Neon executable path, or set
-  OPERA_CLI_EXECUTABLE_PATH="/Applications/Opera Neon Developer.app/Contents/MacOS/Opera".
+  OPERA_CLI_EXECUTABLE_PATH="/Applications/Opera Neon.app/Contents/MacOS/Opera".
 
 gpu:
   Headless Chrome cannot access hardware GPU on most Linux systems.
@@ -1598,15 +1598,14 @@ function defaultNeonProfileDir(neonPath: string | undefined): string | null {
   const home = homedir();
   let candidate: string;
   if (process.platform === "darwin") {
-    const isDeveloper =
-      !neonPath || neonPath.includes("Opera Neon Developer.app");
+    const isDeveloper = neonPath?.includes("Opera Neon Developer.app") ?? false;
     const bundle = isDeveloper
       ? "com.operasoftware.OperaNeonDeveloper"
       : "com.operasoftware.OperaNeon";
     candidate = `${home}/Library/Application Support/${bundle}`;
   } else if (process.platform === "win32") {
     const appData = process.env.APPDATA ?? `${home}\\AppData\\Roaming`;
-    const isDeveloper = !neonPath || neonPath.includes("Developer");
+    const isDeveloper = neonPath?.includes("Developer") ?? false;
     candidate = isDeveloper
       ? `${appData}\\Opera Software\\Opera Neon Developer`
       : `${appData}\\Opera Software\\Opera Neon`;
@@ -1620,10 +1619,10 @@ function neonCandidatePaths(): string[] {
   const home = homedir();
   if (process.platform === "darwin") {
     return [
-      "/Applications/Opera Neon Developer.app/Contents/MacOS/Opera",
       "/Applications/Opera Neon.app/Contents/MacOS/Opera",
-      `${home}/Applications/Opera Neon Developer.app/Contents/MacOS/Opera`,
+      "/Applications/Opera Neon Developer.app/Contents/MacOS/Opera",
       `${home}/Applications/Opera Neon.app/Contents/MacOS/Opera`,
+      `${home}/Applications/Opera Neon Developer.app/Contents/MacOS/Opera`,
     ];
   }
   if (process.platform === "win32") {
@@ -1631,8 +1630,8 @@ function neonCandidatePaths(): string[] {
     const programFiles = process.env.PROGRAMFILES ?? "C:\\Program Files";
     return [
       `${localAppData}\\Programs\\Opera Neon\\opera.exe`,
-      `${localAppData}\\Programs\\Opera Neon Developer\\opera.exe`,
       `${programFiles}\\Opera Neon\\opera.exe`,
+      `${localAppData}\\Programs\\Opera Neon Developer\\opera.exe`,
       `${programFiles}\\Opera Neon Developer\\opera.exe`,
     ];
   }

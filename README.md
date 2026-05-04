@@ -291,7 +291,7 @@ npm link
 **3. Set the browser executable path:**
 
 ```sh
-export OPERA_CLI_EXECUTABLE_PATH="/Applications/Opera Neon Developer.app/Contents/MacOS/Opera"
+export OPERA_CLI_EXECUTABLE_PATH="/Applications/Opera Neon.app/Contents/MacOS/Opera"
 ```
 
 **Tip:** Set `OPERA_CLI_MCP_BIN` to point to the locally linked `opera-devtools-mcp`:
