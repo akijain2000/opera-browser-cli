@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.28](https://github.com/operasoftware/opera-browser-cli/compare/opera-browser-cli-v0.1.27...opera-browser-cli-v0.1.28) (2026-05-04)
+
+
+### Bug Fixes
+
+* Add setup nudge. ([8f40e44](https://github.com/operasoftware/opera-browser-cli/commit/8f40e446781c1aa2791fad36217c686ac015f9e0))
+* Fix stale version in manifest. ([8be41ff](https://github.com/operasoftware/opera-browser-cli/commit/8be41fff4ea969950d337c6a347516268ffbca41))
+* Updated docs to point to Neon. ([7d47fa0](https://github.com/operasoftware/opera-browser-cli/commit/7d47fa08aee18d008989a6ae981afb496e2ee9d1))
+
 ## [0.1.15](https://github.com/kunchenguid/opera-cli/compare/opera-cli-v0.1.14...opera-cli-v0.1.15) (2026-04-11)
 
 
