@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.27](https://github.com/operasoftware/opera-cli/compare/opera-cli-v0.1.26...opera-cli-v0.1.27) (2026-05-04)
+
+
+### Features
+
+* add doctor, logs, AI pre-flight, smarter setup defaults ([d2426ff](https://github.com/operasoftware/opera-cli/commit/d2426ff6d6d4954d4d826df79a3d0671a6e20ece))
+* handle message streaming ([ef835ac](https://github.com/operasoftware/opera-cli/commit/ef835ac77d693f095c4a4f3bcf166400dc0edc6d))
+* handle message streaming ([88a32ef](https://github.com/operasoftware/opera-cli/commit/88a32ef75fe2f300fb76fe84ea49f22eefe2649e))
+* improve UX with setup wizard, config file, and Neon error handling ([503850f](https://github.com/operasoftware/opera-cli/commit/503850f5a29661621aafd758c7568473a7fa706d))
+
+
+### Bug Fixes
+
+* eval IIFE, screenshot false positive, resize bounds validation ([fabb733](https://github.com/operasoftware/opera-cli/commit/fabb733a0b5721e63c8b716a1dc8f3f8c275fabb))
+* map page-closed error to opera-cli pages hint ([e944c10](https://github.com/operasoftware/opera-cli/commit/e944c106a707ec864ada2757fe4ae7d5324cad36))
+* route concurrent Opera AI streaming chunks to their own HTTP responses ([60dd3f8](https://github.com/operasoftware/opera-cli/commit/60dd3f86d0b5b320c4675531d76fd21ebffd9d05))
+* streaming idle timeout ([2331a9a](https://github.com/operasoftware/opera-cli/commit/2331a9ad155b179cc9e59e588c04c52e40ba7044))
+
 ## [0.1.15](https://github.com/kunchenguid/opera-cli/compare/opera-cli-v0.1.14...opera-cli-v0.1.15) (2026-04-11)
 
 
