@@ -2357,12 +2357,26 @@ const COMMANDS: Record<string, CommandFn> = {
   doctor: withoutFullFlag(handleDoctor),
 };
 
+const SETUP_SKIP_COMMANDS = new Set(["setup", "doctor", "logs", "--help", "-h", "--version", "-v", "-V"]);
+
+function warnIfUnconfigured(argv: string[]): void {
+  const cmd = argv[0];
+  if (cmd !== undefined && SETUP_SKIP_COMMANDS.has(cmd)) return;
+  const configFile = join(homedir(), ".opera-browser-cli", "config");
+  if (!existsSync(configFile) && !process.env.OPERA_CLI_EXECUTABLE_PATH) {
+    process.stderr.write(
+      "hint: run `opera-browser-cli setup` to configure (first-time setup)\n",
+    );
+  }
+}
+
 export async function main(
   options: MainOptions | string[] = {},
 ): Promise<void> {
   loadConfig();
   const normalized = normalizeMainOptions(options);
   const requestedArgv = resolveArgv(normalized.argv);
+  warnIfUnconfigured(requestedArgv);
   const homeFull = shouldRenderFullHome(requestedArgv);
   const argv = homeFull ? [] : normalized.argv;
   const stdout = wrapStdout(normalized.stdout, argv);
