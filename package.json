@@ -5,7 +5,7 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kunchenguid/opera-cli.git"
+    "url": "git+https://github.com/operasoftware/opera-cli.git"
   },
   "keywords": [
     "chrome",
@@ -23,7 +23,8 @@
   "files": [
     "dist",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "SKILL.md"
   ],
   "publishConfig": {
     "access": "public"

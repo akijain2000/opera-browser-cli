@@ -2,3 +2,6 @@ node_modules/
 dist/
 .desloppify/
 .DS_Store
+*.swp
+*.tar.gz
+*.png
