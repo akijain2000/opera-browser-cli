@@ -23,7 +23,8 @@ import {
   type ServerResponse,
 } from "node:http";
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 
 const DEFAULT_PORT = Number.parseInt(
@@ -343,8 +344,31 @@ export function buildTransportArgs(): string[] {
   return args;
 }
 
+function resolveOperaMcpBin(): string {
+  if (process.env.OPERA_CLI_MCP_BIN) return process.env.OPERA_CLI_MCP_BIN;
+  try {
+    const require = createRequire(import.meta.url);
+    const pkgPath = require.resolve("opera-devtools-mcp/package.json");
+    const pkgDir = dirname(pkgPath);
+    const pkg = require("opera-devtools-mcp/package.json") as {
+      bin?: Record<string, string> | string;
+    };
+    const binEntry =
+      typeof pkg.bin === "string"
+        ? pkg.bin
+        : pkg.bin?.["opera-devtools-mcp"];
+    if (binEntry) {
+      const resolved = join(pkgDir, binEntry);
+      if (existsSync(resolved)) return resolved;
+    }
+  } catch {
+    // Not installed as a dependency — fall back to PATH
+  }
+  return "opera-devtools-mcp";
+}
+
 function createTransport(): StdioClientTransport {
-  const bin = process.env.OPERA_CLI_MCP_BIN ?? "opera-devtools-mcp";
+  const bin = resolveOperaMcpBin();
   const args = buildTransportArgs();
   if (bin.endsWith(".js")) {
     return new StdioClientTransport({

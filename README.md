@@ -30,26 +30,18 @@ snapshot:
 
 ## Install
 
-Prerequisites: **Node.js >= 20**, **Opera** browser ([Opera Neon](https://www.operaneon.com) recommended for AI features), **[opera-devtools-mcp](https://github.com/operasoftware/opera-devtools-mcp)**.
+Prerequisites: **Node.js >= 20**, **Opera** browser ([Opera Neon](https://www.operaneon.com) recommended for AI features).
 
 ### From source
 
-**1. Build and link `opera-devtools-mcp`:**
-
-```sh
-git clone https://github.com/operasoftware/opera-devtools-mcp
-cd opera-devtools-mcp
-npm install && npm run build && npm link
-```
-
-**2. Build and link `opera-browser-cli`:**
+**Build and link `opera-browser-cli`:**
 
 ```sh
 # in this repo
 npm install && npm run build && npm link
 ```
 
-**3. Run first-time setup:**
+**Run first-time setup:**
 
 ```sh
 opera-browser-cli setup
@@ -244,7 +236,7 @@ session is active or the no-session status/help block when one is not.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `OPERA_CLI_PORT` | `9224` | Bridge server port |
-| `OPERA_CLI_MCP_BIN` | `opera-devtools-mcp` | MCP server binary |
+| `OPERA_CLI_MCP_BIN` | _(bundled `opera-devtools-mcp`)_ | Override the MCP server binary |
 | `OPERA_CLI_EXECUTABLE_PATH` | _(system Chrome)_ | Custom browser binary |
 | `OPERA_CLI_BROWSER_URL` | — | Connect to an existing browser instance instead of launching one |
 | `OPERA_CLI_USER_DATA_DIR` | — | Persistent Chrome profile directory (skips isolated mode) |
