@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.29](https://github.com/operasoftware/opera-browser-cli/compare/opera-browser-cli-v0.1.28...opera-browser-cli-v0.1.29) (2026-05-05)
+
+
+### Features
+
+* Bundle opera-devtools-mcp as a dependency. ([4932ea8](https://github.com/operasoftware/opera-browser-cli/commit/4932ea898cb92fde1aa3031062a5b2ada9ed3975))
+
 ## [0.1.28](https://github.com/operasoftware/opera-browser-cli/compare/opera-browser-cli-v0.1.27...opera-browser-cli-v0.1.28) (2026-05-04)
 
 
