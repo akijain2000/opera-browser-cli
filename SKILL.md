@@ -17,3 +17,15 @@ opera-browser-cli open https://example.com   # start here — navigate and snaps
 ```
 
 If a user hits `Opera Neon: user is not signed in` or wants to use AI commands, suggest they run `opera-browser-cli setup` (interactive wizard) and sign in to Opera Neon. Run `opera-browser-cli doctor` to diagnose configuration issues.
+
+## Canonical source files
+
+When asked how a command works or how to extend the CLI, read the actual source — don't guess from the README:
+
+- `src/cli.ts` — command parsing and dispatch (`opera-browser-cli <command>`).
+- `src/client.ts` — HTTP client for the bridge plus bridge lifecycle (start, stop, health, PID file at `~/.opera-browser-cli/bridge.pid`).
+- `src/bridge.ts` — persistent HTTP ↔ MCP adapter; spawns `opera-devtools-mcp` as a child over stdio.
+- `src/snapshot.ts` — accessibility-tree parsing and `uid=` ref extraction.
+- `src/suggestions.ts` — the `help[]` next-step hints emitted with every response.
+
+For setup, install, or first-time bootstrap, read `bootstrap-prompt.md` and `README.md`. For architecture (transport model, streaming, concurrency), read `CLAUDE.md`.
