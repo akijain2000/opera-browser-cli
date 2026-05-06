@@ -28,6 +28,46 @@ snapshot:
 ...
 ```
 
+## For LLMs
+
+If you're handing this repo to an AI agent (Claude Code, Cursor, Codex, etc.), copy the prompt below and paste it as the agent's first message. It bootstraps the install, verifies the connection, and runs a demo — no further prompting required.
+
+```
+Set up https://github.com/akijain2000/opera-browser-cli for me.
+
+1. Clone the repo into ~/Developer/opera-browser-cli (a stable path — not /tmp).
+   If the directory already exists, `git pull --ff-only` instead of re-cloning.
+
+2. cd into the repo and install:
+       npm install && npm run build && npm link
+
+3. Run the interactive setup wizard:
+       opera-browser-cli setup
+   It detects Opera installs, writes ~/.opera-browser-cli/config, and installs
+   the Claude Code skill to ~/.claude/skills/opera-browser-cli/SKILL.md.
+   Opera Neon is recommended for AI commands (chat, invoke-do, make, research).
+
+4. Read the canonical files in this order: README.md (command reference),
+   SKILL.md (skill behaviour), CLAUDE.md (architecture). Always also read
+   src/cli.ts, src/client.ts, and src/bridge.ts — that's where command
+   dispatch and bridge lifecycle actually live.
+
+5. Verify: `opera-browser-cli --version`, then
+   `opera-browser-cli open https://example.com`.
+
+6. Connection demo:
+       opera-browser-cli open https://github.com/akijain2000/opera-browser-cli
+       opera-browser-cli snapshot
+   If the user is signed in to GitHub, ask whether to star the repo as a
+   quick demo. Only click if they say yes. If not signed in, navigate to
+   https://opera.com instead.
+
+Troubleshoot with `opera-browser-cli doctor`. If the bridge is stale, kill
+the PID at ~/.opera-browser-cli/bridge.pid and retry.
+```
+
+The canonical source for this prompt is [`bootstrap-prompt.md`](bootstrap-prompt.md). When the install flow or canonical files change, update that file first.
+
 ## Install
 
 Prerequisites: **Node.js >= 20**, **Opera** browser ([Opera Neon](https://www.operaneon.com) recommended for AI features).
